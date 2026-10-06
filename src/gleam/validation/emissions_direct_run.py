@@ -10,7 +10,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .._utils import is_na
 from ._shared import (
     _vals,
     abort,
