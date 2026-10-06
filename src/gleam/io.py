@@ -36,6 +36,9 @@ def read_csv(path: str | os.PathLike, **kwargs) -> pd.DataFrame:
         na_values=["", "NA"],
         true_values=None,
         false_values=None,
+        # Correctly rounded parsing (like fread); pandas' default fast parser
+        # can be off by a few ulp.
+        float_precision="round_trip",
         encoding="utf-8-sig",
         **kwargs,
     )

@@ -206,8 +206,10 @@ def validate_scalar_character(x: Any, arg_name: str) -> None:
     """Character and not NA (element-wise for arrays)."""
     if not validation_enabled():
         return
-    arr = np.atleast_1d(np.asarray(x, dtype=object))
-    if any(is_na(v) or not isinstance(v, str) for v in arr):
+    if isinstance(x, str):
+        return
+    arr = np.atleast_1d(x.to_numpy(dtype=object) if isinstance(x, pd.Series) else np.asarray(x, dtype=object))
+    if arr.size == 0 or pd.api.types.infer_dtype(arr.reshape(-1), skipna=False) != "string":
         abort(f"`{arg_name}` must be a single character value.")
 
 
@@ -240,13 +242,17 @@ def validate_scalar_numeric_or_na(x: Any, arg_name: str, min_val: float = 0) -> 
     """Each value is NA or a numeric ``>= min_val``."""
     if not validation_enabled():
         return
-    arr = np.atleast_1d(np.asarray(x, dtype=object))
-    for v in arr:
-        if is_na(v):
-            continue
-        if isinstance(v, (bool, np.bool_)) or not isinstance(v, (int, float, np.number)):
+    arr = np.atleast_1d(x.to_numpy() if isinstance(x, pd.Series) else np.asarray(x))
+    if arr.dtype.kind not in "iuf":
+        vals = arr.astype(object).reshape(-1)
+        present = vals[~pd.isna(vals)]
+        if present.size and pd.api.types.infer_dtype(present, skipna=False) not in (
+            "integer", "floating", "mixed-integer-float", "decimal"
+        ):
             abort(f"`{arg_name}` must be a single numeric (scalar). NA is allowed.")
-        if v < min_val:
+        arr = as_float(arr)
+    with np.errstate(invalid="ignore"):
+        if (as_float(arr) < min_val).any():
             abort(f"`{arg_name}` must be >= {_fmt(float(min_val))}.")
 
 
@@ -272,7 +278,7 @@ def validate_animal_species(species_short: Any) -> None:
     if not validation_enabled():
         return
     validate_scalar_character(species_short, "species_short")
-    bad = [v for v in np.atleast_1d(np.asarray(species_short, dtype=object)) if v not in K.GLEAM_SPECIES]
+    bad = [v for v in pd.unique(np.atleast_1d(as_str(species_short)).reshape(-1)) if v not in K.GLEAM_SPECIES]
     if bad:
         abort(f"`species_short` must be one of: {', '.join(K.GLEAM_SPECIES)}")
 
@@ -281,7 +287,7 @@ def validate_cohort_code(cohort_short: Any) -> None:
     if not validation_enabled():
         return
     validate_scalar_character(cohort_short, "cohort_short")
-    bad = [v for v in np.atleast_1d(np.asarray(cohort_short, dtype=object)) if v not in K.GLEAM_COHORTS]
+    bad = [v for v in pd.unique(np.atleast_1d(as_str(cohort_short)).reshape(-1)) if v not in K.GLEAM_COHORTS]
     if bad:
         abort(f"`cohort_short` must be one of: {', '.join(K.GLEAM_COHORTS)}")
 
@@ -295,26 +301,32 @@ def validate_is_egg_producing_flag(
     """Vectorised ``validate_is_egg_producing_flag()``."""
     if not validation_enabled():
         return
+    raw = np.atleast_1d(
+        is_egg_producing.to_numpy(dtype=object) if isinstance(is_egg_producing, pd.Series)
+        else np.asarray(is_egg_producing, dtype=object)
+    ).reshape(-1)
+    present = raw[~pd.isna(raw)]
+    if present.size and pd.api.types.infer_dtype(present, skipna=False) != "boolean":
+        abort("`is_egg_producing` must be logical (TRUE/FALSE).")
     sp, co, egg, ph = np.broadcast_arrays(
         as_str(species_short), as_str(cohort_short), as_bool(is_egg_producing),
         as_float(nondemo_productive_phase_id),
     )
-    for s, c, e, p in zip(sp.ravel(), co.ravel(), egg.ravel(), ph.ravel()):
-        if s != "CHK":
-            if e is True:
-                abort("`is_egg_producing` can be TRUE only for \"CHK\".")
-            continue
-        if e is None:
-            abort("`is_egg_producing` must be a single non-missing logical value for \"CHK\".")
-        if e is not True:
-            continue
-        if c not in ("FA", "FN"):
-            abort("`is_egg_producing` can be TRUE only for CHK cohorts \"FA\" or \"FN\".")
-        if c == "FN" and (np.isnan(p) or p != 2):
-            abort(
-                "`is_egg_producing` can be TRUE for \"FN\" only when "
-                "`nondemo_productive_phase_id` is 2."
-            )
+    is_chk = sp == "CHK"
+    egg_true = np.asarray(egg == True, dtype=bool)  # noqa: E712
+    egg_na = np.asarray(pd.isna(egg), dtype=bool)
+    if (~is_chk & egg_true).any():
+        abort("`is_egg_producing` can be TRUE only for \"CHK\".")
+    if (is_chk & egg_na).any():
+        abort("`is_egg_producing` must be a single non-missing logical value for \"CHK\".")
+    laying = is_chk & egg_true
+    if (laying & ~((co == "FA") | (co == "FN"))).any():
+        abort("`is_egg_producing` can be TRUE only for CHK cohorts \"FA\" or \"FN\".")
+    if (laying & (co == "FN") & (np.isnan(ph) | (ph != 2))).any():
+        abort(
+            "`is_egg_producing` can be TRUE for \"FN\" only when "
+            "`nondemo_productive_phase_id` is 2."
+        )
 
 
 def normalize_optional_is_egg_producing_column(
@@ -382,14 +394,15 @@ def check_cohort_completeness(cohort_level_data: pd.DataFrame, data_arg: str = "
     if not validation_enabled():
         return
     demo = cohort_level_data[cohort_level_data["cohort_short"].isin(K.GLEAM_COHORTS_DEMOGRAPHIC)]
-    wrong, incomplete = [], []
-    for herd_id, g in demo.groupby("herd_id", sort=False, dropna=False):
-        cohorts = list(g["cohort_short"])
-        if len(cohorts) != 6:
-            wrong.append(herd_id)
-        if set(cohorts) != set(K.GLEAM_COHORTS_DEMOGRAPHIC):
-            missing = [c for c in K.GLEAM_COHORTS_DEMOGRAPHIC if c not in cohorts]
-            incomplete.append(f"{herd_id} (missing: {', '.join(missing)})")
+    grouped = demo.groupby("herd_id", sort=False, dropna=False)["cohort_short"]
+    counts = grouped.size()
+    n_distinct = grouped.nunique()
+    wrong = list(counts.index[counts.to_numpy() != 6])
+    incomplete = []
+    for herd_id in n_distinct.index[n_distinct.to_numpy() != 6]:
+        cohorts = set(demo.loc[demo["herd_id"] == herd_id, "cohort_short"])
+        missing = [c for c in K.GLEAM_COHORTS_DEMOGRAPHIC if c not in cohorts]
+        incomplete.append(f"{herd_id} (missing: {', '.join(missing)})")
     if wrong:
         abort(
             f"Each herd_id must have exactly 6 rows in `{data_arg}` (one per cohort). "
@@ -450,9 +463,10 @@ def check_herd_id_consistency(
         return
     c_ids = list(pd.unique(cohort_level_data["herd_id"]))
     h_ids = list(pd.unique(herd_level_data["herd_id"]))
-    miss_h = [h for h in c_ids if h not in set(h_ids)]
+    c_set, h_set = set(c_ids), set(h_ids)
+    miss_h = [h for h in c_ids if h not in h_set]
     if miss_h:
         abort(f"Herd IDs in `{cohort_arg}` not found in `{herd_arg}`: {_vals(miss_h)}")
-    miss_c = [h for h in h_ids if h not in set(c_ids)]
+    miss_c = [h for h in h_ids if h not in c_set]
     if miss_c:
         abort(f"Herd IDs in `{herd_arg}` not found in `{cohort_arg}`: {_vals(miss_c)}")

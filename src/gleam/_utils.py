@@ -43,33 +43,44 @@ def as_float(x: ArrayLike) -> np.ndarray:
     Booleans become 0/1 like R's coercion of logicals to numeric.
     """
     if isinstance(x, (pd.Series, pd.Index)):
+        if x.dtype.kind in "iufb":
+            return x.to_numpy(dtype="float64")
         return pd.to_numeric(x, errors="coerce").to_numpy(dtype="float64", na_value=np.nan)
     if x is None or x is pd.NA:
         return np.array(np.nan)
     arr = np.asarray(x)
     if arr.dtype == object:
-        return np.array(
-            [np.nan if (v is None or v is pd.NA or (isinstance(v, float) and np.isnan(v))) else float(v)
-             for v in arr.ravel()],
-            dtype="float64",
-        ).reshape(arr.shape)
+        na = pd.isna(arr)
+        out = np.full(arr.shape, np.nan)
+        if (~na).any():
+            out[~na] = arr[~na].astype("float64")
+        return out
     return arr.astype("float64", copy=False)
+
+
+def _object_values(x: ArrayLike) -> np.ndarray:
+    if isinstance(x, (pd.Series, pd.Index)):
+        return x.to_numpy(dtype=object)
+    return np.asarray(x, dtype=object)
 
 
 def as_str(x: ArrayLike) -> np.ndarray:
     """Convert to an object array of ``str`` with missing values as ``None``."""
-    if isinstance(x, (pd.Series, pd.Index)):
-        vals = x.to_numpy(dtype=object)
-    elif x is None:
+    if x is None:
         return np.array(None, dtype=object)
-    else:
-        vals = np.asarray(x, dtype=object)
-    out = np.empty(vals.shape, dtype=object)
-    flat_in = vals.ravel()
-    flat_out = out.ravel()
-    for i, v in enumerate(flat_in):
-        flat_out[i] = None if is_na(v) else str(v)
+    vals = _object_values(x)
+    na = pd.isna(vals)
+    out = vals.copy() if vals.ndim else np.array(vals.item(), dtype=object)
+    if np.ndim(na) == 0:
+        return np.array(None if na else str(out.item()), dtype=object)
+    present = out[~na]
+    if present.size and pd.api.types.infer_dtype(present, skipna=False) != "string":
+        out[~na] = np.array([str(v) for v in present], dtype=object)
+    out[na] = None
     return out
+
+
+_LOGICAL_STR = {"TRUE": True, "T": True, "FALSE": False, "F": False}
 
 
 def as_bool(x: ArrayLike) -> np.ndarray:
@@ -77,29 +88,35 @@ def as_bool(x: ArrayLike) -> np.ndarray:
 
     Use :func:`is_true` for R's ``isTRUE()`` semantics (``NA`` -> ``False``).
     """
-    if isinstance(x, (pd.Series, pd.Index)):
-        vals = x.to_numpy(dtype=object)
-    elif x is None:
+    if x is None:
         return np.array(None, dtype=object)
-    else:
-        vals = np.asarray(x, dtype=object)
-    out = np.empty(vals.shape, dtype=object)
-    flat_out = out.ravel()
-    for i, v in enumerate(vals.ravel()):
-        if is_na(v):
-            flat_out[i] = None
-        elif isinstance(v, str):
-            u = v.strip().upper()
-            flat_out[i] = True if u in ("TRUE", "T") else False if u in ("FALSE", "F") else None
+    vals = _object_values(x)
+    shape = vals.shape
+    flat = vals.reshape(-1)
+    na = pd.isna(flat)
+    out = np.empty(flat.shape, dtype=object)
+    out[na] = None
+    present = flat[~na]
+    if present.size:
+        kind = pd.api.types.infer_dtype(present, skipna=False)
+        if kind == "boolean":
+            conv = present.astype(bool).tolist()
+        elif kind in ("integer", "floating", "mixed-integer-float", "decimal"):
+            conv = (present.astype("float64") != 0).tolist()
+        elif kind == "string":
+            conv = [_LOGICAL_STR.get(v.strip().upper()) for v in present]
         else:
-            flat_out[i] = bool(v)
-    return out
+            conv = [
+                _LOGICAL_STR.get(v.strip().upper()) if isinstance(v, str) else bool(v) for v in present
+            ]
+        out[~na] = np.array(conv + [None], dtype=object)[:-1]
+    return out.reshape(shape)
 
 
 def is_true(x: ArrayLike) -> np.ndarray:
     """Element-wise ``isTRUE()``: ``True`` only where the value is logical TRUE."""
     b = as_bool(x)
-    return np.array([v is True for v in b.ravel()], dtype=bool).reshape(b.shape)
+    return np.asarray(b == True, dtype=bool)  # noqa: E712 (None == True is False)
 
 
 def is_na(v: Any) -> bool:
@@ -120,7 +137,7 @@ def isna(x: ArrayLike) -> np.ndarray:
         return np.isnan(arr)
     if arr.dtype.kind in "iub":
         return np.zeros(arr.shape, dtype=bool)
-    return np.array([is_na(v) for v in arr.ravel()], dtype=bool).reshape(arr.shape)
+    return np.asarray(pd.isna(arr), dtype=bool)
 
 
 def broadcast(*xs: ArrayLike) -> list[np.ndarray]:
@@ -154,15 +171,21 @@ def finalize_dict(d: dict[str, Any], scalar: bool) -> dict[str, Any]:
 def isin(x: ArrayLike, values: Iterable[Any]) -> np.ndarray:
     """R ``%in%`` (``NA %in% c(...)`` is ``FALSE`` unless NA is in the set)."""
     values = list(values)
-    arr = np.asarray(x, dtype=object) if not isinstance(x, np.ndarray) else x
-    if arr.dtype.kind == "f":
-        num_vals = [v for v in values if isinstance(v, (int, float, np.number)) and not is_na(v)]
-        return np.isin(arr, num_vals)
-    vs = set(v for v in values if not is_na(v))
     has_na = any(is_na(v) for v in values)
-    return np.array(
-        [(is_na(v) and has_na) or (not is_na(v) and v in vs) for v in np.ravel(arr)], dtype=bool
-    ).reshape(np.shape(arr))
+    present = [v for v in values if not is_na(v)]
+    arr = x.to_numpy() if isinstance(x, (pd.Series, pd.Index)) else np.asarray(x)
+    if arr.dtype.kind in "iuf":
+        num = [v for v in present if isinstance(v, (int, float, np.number)) and not isinstance(v, bool)]
+        res = np.isin(arr, num)
+        if has_na and arr.dtype.kind == "f":
+            res |= np.isnan(arr)
+        return res
+    obj = np.asarray(arr, dtype=object)
+    flat = obj.reshape(-1)
+    res = pd.Series(flat).isin(present).to_numpy()
+    na = pd.isna(flat)
+    res = np.where(na, has_na, res)
+    return res.reshape(obj.shape)
 
 
 def ifelse(cond: ArrayLike, yes: ArrayLike, no: ArrayLike) -> np.ndarray:
@@ -179,7 +202,7 @@ def ifelse(cond: ArrayLike, yes: ArrayLike, no: ArrayLike) -> np.ndarray:
         cb = np.where(na, False, c != 0)
     elif c.dtype == object:
         na = isna(c)
-        cb = np.array([bool(v) if not is_na(v) else False for v in c.ravel()]).reshape(c.shape)
+        cb = is_true(c)
     else:
         na = np.zeros(c.shape, dtype=bool)
         cb = c.astype(bool)
