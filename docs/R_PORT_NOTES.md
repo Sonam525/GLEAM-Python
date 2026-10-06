@@ -13,7 +13,7 @@ as the local branch `integration/r-reference` of the `Sonam525/GLEAM` fork:
 | `feature/run-direct-emissions-only` | `aa8915d` | `run_emissions_direct()` |
 | `feature/optional-validation-rule` | `6a66d86` | `validate_inputs` switch (re-implemented, not merged) |
 
-The merge is clean. One adaptation was needed (commit `a6f5215` on the
+The merge is clean. One adaptation was needed (commit `c9d4e91` on the
 integration branch): `run_emissions_direct()` was written against `main` and
 had to call `run_all_herd_module()`, add the optional non-demographic herd
 columns and join ration quality on `nondemo_productive_phase_id`, exactly as
