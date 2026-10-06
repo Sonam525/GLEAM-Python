@@ -49,15 +49,21 @@ Not ported:
    Python, and compares all outputs. R and Python must also fail on the
    same scenarios with the same validation error. Python receives the
    inputs exactly as R parsed them (hex floats), so the comparison is
-   bit-for-bit on inputs.
+   bit-for-bit on inputs. Result on 30 scenarios (10 each from the
+   herd-structure, mixed demographic + non-demographic and CHK
+   non-demographic examples):
+   * 23 ran successfully and matched R on every output table;
+   * the other 7 were rejected by both implementations, by the same
+     ULP-sensitive weight check (see below) on the same rows.
 4. **Bit-level checks.** While porting, each module was also compared with R
    on hex-dumped doubles. All arithmetic reproduces R's order of operations;
    most modules are bit-identical. The remaining ULP-level differences come
    from R's math library on the reference machine (Windows ARM64, R running
    as emulated x86_64): its `^`/`exp`/`log` are up to a few ULP from the
    correctly rounded result that numpy returns, and its `fread`/`sprintf`
-   are not correctly rounded. Measured end-to-end differences are below
-   `1e-11` relative.
+   are not correctly rounded. The largest relative difference over the
+   ~90,000 non-zero numeric outputs of the 12 pipeline golden cases is
+   6.6e-12.
 
 ## Intentional differences from R
 
