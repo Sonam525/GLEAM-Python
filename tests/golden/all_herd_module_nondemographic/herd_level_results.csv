@@ -1,0 +1,6 @@
+herd_id,species_short,cohort_stock_fem_annual_nondemo,cohort_stock_mal_annual_nondemo,rest_between_nondemo_cycles_duration,phase1_nondemo_fem_duration_days,phase2_nondemo_fem_duration_days,phase1_nondemo_mal_duration_days,phase2_nondemo_mal_duration_days,total_nondemo_fem_duration_days,total_nondemo_mal_duration_days
+1,"CTL","0","122282.545400456",20,NA,NA,60,120,"0","180"
+9,"PGS","1683739.0779162","345303.81744477898",20,60,110,60,100,"170","160"
+10,"PGS","941.41228289839103","34.777805113010402",20,90,180,90,180,"270","270"
+14,"CHK","468457.20080165501","0",14,60,365,NA,NA,"425","0"
+15,"CHK","1014956.2549820601","1227598.7821859701",7,21,21,21,21,"42","42"

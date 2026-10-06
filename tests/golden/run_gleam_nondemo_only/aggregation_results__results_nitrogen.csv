@@ -1,0 +1,7 @@
+variable_name,herd_id,species_short,variable_type,value_total,label,unit
+"nitrogen_excretion",14,"CHK","NitrogenBalance","4059.3705541353684","NitrogenExcretion","kg N"
+"nitrogen_excretion",15,"CHK","NitrogenBalance","72.888875909359484","NitrogenExcretion","kg N"
+"nitrogen_intake",14,"CHK","NitrogenBalance","7156.4505233745267","NitrogenIntake","kg N"
+"nitrogen_intake",15,"CHK","NitrogenBalance","163.71782900203092","NitrogenIntake","kg N"
+"nitrogen_retention",14,"CHK","NitrogenBalance","3097.0799692391583","NitrogenRetention","kg N"
+"nitrogen_retention",15,"CHK","NitrogenBalance","90.828953092671412","NitrogenRetention","kg N"

@@ -1,0 +1,13 @@
+variable_name,herd_id,species_short,variable_type,value_total,label,unit
+"ration_intake",1,"CTL","Feed","76184994902.26532","DryMatterIntake","kg dry matter"
+"ration_intake",2,"CTL","Feed","27036176.571418848","DryMatterIntake","kg dry matter"
+"ration_intake",3,"SHP","Feed","2054671294.7066896","DryMatterIntake","kg dry matter"
+"ration_intake",4,"SHP","Feed","4220697662.0203028","DryMatterIntake","kg dry matter"
+"ration_intake",5,"GTS","Feed","740093764.41226625","DryMatterIntake","kg dry matter"
+"ration_intake",6,"GTS","Feed","107005216.35180719","DryMatterIntake","kg dry matter"
+"ration_intake",7,"BFL","Feed","898631643.15918994","DryMatterIntake","kg dry matter"
+"ration_intake",8,"BFL","Feed","299419193305.83344","DryMatterIntake","kg dry matter"
+"ration_intake",9,"PGS","Feed","17646253106.335175","DryMatterIntake","kg dry matter"
+"ration_intake",10,"PGS","Feed","876104740.28187406","DryMatterIntake","kg dry matter"
+"ration_intake",11,"CML","Feed","10793524189.724417","DryMatterIntake","kg dry matter"
+"ration_intake",12,"CML","Feed","859586732.06778276","DryMatterIntake","kg dry matter"

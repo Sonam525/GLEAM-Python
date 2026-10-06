@@ -1,0 +1,3 @@
+variable_name,herd_id,species_short,variable_type,value_total,label,unit
+"ration_intake",14,"CHK","Feed","220421.27667411993","DryMatterIntake","kg dry matter"
+"ration_intake",15,"CHK","Feed","5073.2885294090165","DryMatterIntake","kg dry matter"
