@@ -1,0 +1,7 @@
+herd_id	species_short	cohort_short	nondemo_productive_phase_id	cohort_duration_days	offtake_rate	death_rate	high_activity_fraction	low_activity_fraction	is_egg_producing	offtake_heads	offtake_heads_assessment	cohort_stock_size
+13	CHK	FA	NA	365	0.18	0.06	0.05	0.15	FALSE	532.704769	532.704769	892.7929627
+13	CHK	FJ	NA	3	0.08	0.12	0.05	0.15	FALSE	660.1440661	660.1440661	114.0997869
+13	CHK	FS	NA	167	0.12	0.08	0.05	0.15	FALSE	332.0907551	332.0907551	2056.27029
+13	CHK	MA	NA	365	0.75	0.09	0.05	0.15	FALSE	303.0905372	303.0905372	287.5718394
+13	CHK	MJ	NA	3	0.12	0.12	0.05	0.15	FALSE	990.3939691	990.3939691	112.4199424
+13	CHK	MS	NA	167	0.7	0.09	0.05	0.15	FALSE	2401.003256	2401.003256	1536.845178

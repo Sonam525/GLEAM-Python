@@ -1,0 +1,194 @@
+From eef5adba358059f1a133e58f52519266ef784dd4 Mon Sep 17 00:00:00 2001
+From: Sonam525 <149631650+Sonam525@users.noreply.github.com>
+Date: Thu, 8 Oct 2026 17:07:13 -0400
+Subject: [PATCH] Adapt run_emissions_direct to the merged herd API
+
+Route the herd step through run_all_herd_module, add the optional
+non-demographic herd columns and join ration quality on
+nondemo_productive_phase_id, mirroring run_gleam. Add zero juvenile
+diversion proportions to the direct-emissions example herd table and point
+the tests at the direct-emissions example inputs.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ R/run_emissions_direct.R                      | 57 ++++++++++++++++++-
+ .../emissions_direct_input_hrd_data.csv       | 26 ++++-----
+ tests/testthat/test-run_emissions_direct.R    | 25 +++++---
+ 3 files changed, 83 insertions(+), 25 deletions(-)
+
+diff --git a/R/run_emissions_direct.R b/R/run_emissions_direct.R
+index 72bd4cc..04cd0d2 100644
+--- a/R/run_emissions_direct.R
++++ b/R/run_emissions_direct.R
+@@ -34,6 +34,13 @@
+ #'
+ #' @inheritParams run_gleam
+ #'
++#' @param run_demographic Logical. If \code{TRUE} and
++#'   \code{has_herd_structure = FALSE}, include the demographic herd module in
++#'   the herd-structure generation step via \code{\link{run_all_herd_module}}.
++#' @param run_nondemographic Logical. If \code{TRUE} and
++#'   \code{has_herd_structure = FALSE}, include the non-demographic herd module
++#'   in the herd-structure generation step via \code{\link{run_all_herd_module}}.
++
+ #' @param emission_factors_only Logical. If \code{TRUE}, stop after calculating
+ #'   enteric and manure emission factors at cohort level, skipping production,
+ #'   allocation, and aggregation. Factors are returned in
+@@ -460,6 +467,8 @@
+ #' @export
+ run_emissions_direct <- function(
+     has_herd_structure = FALSE,
++    run_demographic = TRUE,
++    run_nondemographic = TRUE,
+     cohort_level_data,
+     herd_level_data,
+     feed_rations = NULL,
+@@ -496,16 +505,58 @@ run_emissions_direct <- function(
+     gleam_chrt_data <- data.table::as.data.table(cohort_level_data)
+     gleam_hrd_data <- data.table::as.data.table(herd_level_data)
+   } else {
+-    herd_results <- run_demographic_herd_module(
++    herd_results <- run_all_herd_module(
+       cohort_level_data = cohort_level_data,
+       herd_level_data = herd_level_data,
+       simulation_duration = simulation_duration,
+-      show_indicator = show_indicator
++      show_indicator = show_indicator,
++      run_demographic = run_demographic,
++      run_nondemographic = run_nondemographic
+     )
+     gleam_chrt_data <- herd_results$cohort_level_results
+     gleam_hrd_data <- herd_results$herd_level_results
+   }
+ 
++  # Optional nondemographic herd inputs are only needed for FN/MN cohorts, but
++  # downstream joins expect the columns to exist (mirrors run_gleam()).
++  optional_nondemo_hrd_cols <- c(
++    "prop_nondemo_fem_juv",
++    "prop_nondemo_mal_juv",
++    "rest_between_nondemo_cycles_duration",
++    "phase1_nondemo_fem_duration_days",
++    "phase2_nondemo_fem_duration_days",
++    "phase1_nondemo_mal_duration_days",
++    "phase2_nondemo_mal_duration_days",
++    "live_weight_female_nondemographic_start",
++    "live_weight_male_nondemographic_start",
++    "live_weight_female_nondemographic_end",
++    "live_weight_male_nondemographic_end"
++  )
++  missing_optional_nondemo_cols <- setdiff(optional_nondemo_hrd_cols, names(gleam_hrd_data))
++  if (length(missing_optional_nondemo_cols) > 0) {
++    gleam_hrd_data[, (missing_optional_nondemo_cols) := NA_real_]
++  }
++
++  if (!has_herd_structure && isTRUE(run_demographic) && isTRUE(run_nondemographic)) {
++    gleam_hrd_data[
++      !is.na(prop_nondemo_mal_juv) & prop_nondemo_mal_juv > 0,
++      live_weight_male_nondemographic_start := live_weight_at_weaning
++    ]
++    gleam_hrd_data[
++      is.na(prop_nondemo_mal_juv) | prop_nondemo_mal_juv <= 0,
++      live_weight_male_nondemographic_start := NA_real_
++    ]
++
++    gleam_hrd_data[
++      !is.na(prop_nondemo_fem_juv) & prop_nondemo_fem_juv > 0,
++      live_weight_female_nondemographic_start := live_weight_at_weaning
++    ]
++    gleam_hrd_data[
++      is.na(prop_nondemo_fem_juv) | prop_nondemo_fem_juv <= 0,
++      live_weight_female_nondemographic_start := NA_real_
++    ]
++  }
++
+   # --- Step 3: Run weights at cohort level ------------------------------------
+   weights_results <- run_weights_module(
+     cohort_level_data = gleam_chrt_data,
+@@ -526,7 +577,7 @@ run_emissions_direct <- function(
+     gleam_chrt_data <- merge(
+       gleam_chrt_data,
+       feed_rations_summary,
+-      by = c("herd_id", "species_short", "cohort_short")
++      by = c("herd_id", "species_short", "cohort_short", "nondemo_productive_phase_id")
+     )
+   }
+ 
+diff --git a/inst/extdata/run_modules_examples/emissions_direct_input_hrd_data.csv b/inst/extdata/run_modules_examples/emissions_direct_input_hrd_data.csv
+index 03a3614..33d8d4a 100644
+--- a/inst/extdata/run_modules_examples/emissions_direct_input_hrd_data.csv
++++ b/inst/extdata/run_modules_examples/emissions_direct_input_hrd_data.csv
+@@ -1,13 +1,13 @@
+-herd_id	species_short	parturition_rate	litter_size	birth_fraction_female	herd_size_total	live_weight_female_adult	live_weight_male_adult	live_weight_at_birth	live_weight_female_at_slaughter	live_weight_male_at_slaughter	live_weight_at_weaning	age_first_parturition	lactating_females_fraction	milk_yield_day	milk_fat_fraction	non_productive_duration	pregnancy_duration	death_rate_juvenile	lactation_duration	draught_work_hours_female	draught_work_hours_male	draught_fraction_female	draught_fraction_male	fibre_yield_year	milk_protein_fraction	milk_lactose_fraction	milk_protein_fraction_standard	milk_fat_fraction_standard	milk_lactose_fraction_standard	carcass_dressing_fraction	bone_free_meat_fraction	meat_protein_fraction	ratio_me_to_ne	egg_average_weight
+-1	CTL	0.8	1	0.5	20300000	680	916	41	557	605	250	770	0.4	27.9	0.037		283			0	0	0	0	0	0.031	0.048	0.033	0.04	0.048	0.65	0.65	0.21	0.43	0
+-2	CTL	0.684	1	0.5	10000	350	450	14	250	250	220	1460	0	0	0		283			0	1.1	0	0.2	0	0	0	0.033	0.04	0.048	0.65	0.65	0.21	0.43	0
+-3	SHP	0.93	1	0.5	5560000	51	59	4.19	35	35	30	508	0.3	0.212	0.066		152							1.5	0.058	0.045	0.033	0.04	0.048	0.65	0.7	0.21	0.43	0
+-4	SHP	0.745	1	0.5	7980000	60.1	70.3	5.21	51.8	55.9	35	729	0	0	0		152							2.5	0	0	0.033	0.04	0.048	0.65	0.7	0.21	0.43	0
+-5	GTS	0.82	1	0.5	1340000	70	110	3.5	25	25	15	475	0.3	1.34	0.0589		150							1.8	0.034	0.046	0.033	0.04	0.048	0.65	0.7	0.21	0.43	0
+-6	GTS	0.91	1.7	0.5	2e+05	51	75.2	3.3	29	29	14	624	0	0	0		150							0.75	0	0	0.033	0.04	0.048	0.65	0.7	0.21	0.43	0
+-7	BFL	0.8	1	0.5	334000	600	800	38	420	420	130	1030	0.35	2.32	0.0824		310			0	0	0	0	0	0.0466	0.048	0.033	0.04	0.048	0.65	0.75	0.21	0.43	0
+-8	BFL	0.835	1	0.5	92800000	478	500	32.6	110	110	110	1460	0.35	5.09	0.071		310			0	2.2	0	0.2	0	0.035	0.048	0.033	0.04	0.048	0.65	0.75	0.21	0.43	0
+-9	PGS	2.33	13.5	0.5	26100000	225	265	1.2	122	122	7	386	0	0	0	14.6	115	0.13	27					0	0	0	0.033	0.04	0.048	0.65	0.65	0.21	0.43	0
+-10	PGS	1.6	7	0.5	2250000	64	71	1	60	60	6	430	0	0	0	23	115	0.22	90					0	0	0	0.033	0.04	0.048	0.65	0.65	0.21	0.43	0
+-11	CML	0.43	1	0.5	7210000	352	382	28.7	352	382	120	2560	0.3	4.17	0.035		390			0	2	0	0.1	1	0.035	0.048	0.033	0.04	0.048	0.65	0.65	0.21	0.43	0
+-12	CML	0.83	1	0.5	430000	537	572	32.7	537	572	150	1640	0.3	9.72	0.035		390			0	2	0	0.1	1	0.035	0.048	0.033	0.04	0.048	0.65	0.65	0.21	0.43	0
++herd_id	species_short	parturition_rate	litter_size	birth_fraction_female	herd_size_total	live_weight_female_adult	live_weight_male_adult	live_weight_at_birth	live_weight_female_at_slaughter	live_weight_male_at_slaughter	live_weight_at_weaning	age_first_parturition	lactating_females_fraction	milk_yield_day	milk_fat_fraction	non_productive_duration	pregnancy_duration	death_rate_juvenile	lactation_duration	draught_work_hours_female	draught_work_hours_male	draught_fraction_female	draught_fraction_male	fibre_yield_year	milk_protein_fraction	milk_lactose_fraction	milk_protein_fraction_standard	milk_fat_fraction_standard	milk_lactose_fraction_standard	carcass_dressing_fraction	bone_free_meat_fraction	meat_protein_fraction	ratio_me_to_ne	egg_average_weight	prop_nondemo_fem_juv	prop_nondemo_mal_juv
++1	CTL	0.8	1	0.5	20300000	680	916	41	557	605	250	770	0.4	27.9	0.037		283			0	0	0	0	0	0.031	0.048	0.033	0.04	0.048	0.65	0.65	0.21	0.43	0	0	0
++2	CTL	0.684	1	0.5	10000	350	450	14	250	250	220	1460	0	0	0		283			0	1.1	0	0.2	0	0	0	0.033	0.04	0.048	0.65	0.65	0.21	0.43	0	0	0
++3	SHP	0.93	1	0.5	5560000	51	59	4.19	35	35	30	508	0.3	0.212	0.066		152							1.5	0.058	0.045	0.033	0.04	0.048	0.65	0.7	0.21	0.43	0	0	0
++4	SHP	0.745	1	0.5	7980000	60.1	70.3	5.21	51.8	55.9	35	729	0	0	0		152							2.5	0	0	0.033	0.04	0.048	0.65	0.7	0.21	0.43	0	0	0
++5	GTS	0.82	1	0.5	1340000	70	110	3.5	25	25	15	475	0.3	1.34	0.0589		150							1.8	0.034	0.046	0.033	0.04	0.048	0.65	0.7	0.21	0.43	0	0	0
++6	GTS	0.91	1.7	0.5	2e+05	51	75.2	3.3	29	29	14	624	0	0	0		150							0.75	0	0	0.033	0.04	0.048	0.65	0.7	0.21	0.43	0	0	0
++7	BFL	0.8	1	0.5	334000	600	800	38	420	420	130	1030	0.35	2.32	0.0824		310			0	0	0	0	0	0.0466	0.048	0.033	0.04	0.048	0.65	0.75	0.21	0.43	0	0	0
++8	BFL	0.835	1	0.5	92800000	478	500	32.6	110	110	110	1460	0.35	5.09	0.071		310			0	2.2	0	0.2	0	0.035	0.048	0.033	0.04	0.048	0.65	0.75	0.21	0.43	0	0	0
++9	PGS	2.33	13.5	0.5	26100000	225	265	1.2	122	122	7	386	0	0	0	14.6	115	0.13	27					0	0	0	0.033	0.04	0.048	0.65	0.65	0.21	0.43	0	0	0
++10	PGS	1.6	7	0.5	2250000	64	71	1	60	60	6	430	0	0	0	23	115	0.22	90					0	0	0	0.033	0.04	0.048	0.65	0.65	0.21	0.43	0	0	0
++11	CML	0.43	1	0.5	7210000	352	382	28.7	352	382	120	2560	0.3	4.17	0.035		390			0	2	0	0.1	1	0.035	0.048	0.033	0.04	0.048	0.65	0.65	0.21	0.43	0	0	0
++12	CML	0.83	1	0.5	430000	537	572	32.7	537	572	150	1640	0.3	9.72	0.035		390			0	2	0	0.1	1	0.035	0.048	0.033	0.04	0.048	0.65	0.65	0.21	0.43	0	0	0
+diff --git a/tests/testthat/test-run_emissions_direct.R b/tests/testthat/test-run_emissions_direct.R
+index ac8d6eb..e0a91c0 100644
+--- a/tests/testthat/test-run_emissions_direct.R
++++ b/tests/testthat/test-run_emissions_direct.R
+@@ -1,16 +1,22 @@
+ # Independent fixtures for the direct emissions entry point.
+ d_direct <- local({
+-  path <- system.file("extdata/run_gleam_examples", package = "gleam")
++  path <- system.file("extdata/run_modules_examples", package = "gleam")
+   read_input <- function(name) data.table::fread(file.path(path, name))
++  herd <- read_input("emissions_direct_input_hrd_data.csv")
++  # Shared example tables also cover herds outside the direct-emissions set.
++  in_herds <- function(dt) if ("herd_id" %in% names(dt)) dt[herd_id %in% herd$herd_id] else dt
+   list(
+-    cohort_no_structure = read_input("master_chrt_lvl_no_structure_data.csv"),
+-    cohort_structure = read_input("master_chrt_lvl_structure_data.csv"),
+-    herd = read_input("master_hrd_lvl_data.csv"),
+-    feed_rations = read_input("feed_rations_share_chrt.csv"),
++    cohort_no_structure = read_input("emissions_direct_input_chrt_no_structure_data.csv"),
++    cohort_structure = read_input("emissions_direct_input_chrt_structure_data.csv"),
++    herd = herd,
++    # The direct-emissions examples only contain demographic cohorts.
++    feed_rations = in_herds(read_input("feed_rations_share_chrt.csv"))[
++      cohort_short %in% gleam_cohorts_demographic
++    ],
+     feed_params = read_input("feed_quality.csv"),
+-    feed_emissions = read_input("feed_emission_factors.csv"),
+-    mms_fraction = read_input("manure_management_system_fraction.csv"),
+-    mms_factors = read_input("manure_management_system_factors.csv")
++    feed_emissions = in_herds(read_input("feed_emission_factors.csv")),
++    mms_fraction = in_herds(read_input("manure_management_system_fraction.csv")),
++    mms_factors = in_herds(read_input("manure_management_system_factors.csv"))
+   )
+ })
+ 
+@@ -19,7 +25,8 @@ direct_quality <- run_ration_quality_module(
+ )
+ data.table::setkeyv(direct_quality, c("herd_id", "species_short", "cohort_short"))
+ direct_quality_cols <- setdiff(
+-  names(direct_quality), c("herd_id", "species_short", "cohort_short")
++  names(direct_quality),
++  c("herd_id", "species_short", "cohort_short", "nondemo_productive_phase_id")
+ )
+ 
+ direct_inputs <- function(has_herd_structure = TRUE, primary = FALSE) {
+-- 
+2.54.0.windows.1
+

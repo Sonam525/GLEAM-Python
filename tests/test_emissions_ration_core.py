@@ -15,8 +15,8 @@ import math
 import numpy as np
 import pytest
 
-import gleam
-from gleam import (
+import gleampy
+from gleampy import (
     GleamValidationError,
     calc_ch4_ration_rice,
     calc_co2_ration_crop_activities,
@@ -218,7 +218,7 @@ ALL = (
 
 def test_public_names_are_registered():
     for fn in ALL:
-        assert getattr(gleam, fn.__name__) is fn
+        assert getattr(gleampy, fn.__name__) is fn
 
 
 @pytest.mark.parametrize("fn", ALL, ids=lambda f: f.__name__)

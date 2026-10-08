@@ -1,0 +1,44 @@
+gleampy: Python port of the GLEAM R package
+===========================================
+
+This software is a modified version, translated from R into Python, of the R
+package "gleam" (GLEAM-X, the R implementation of FAO's Global Livestock
+Environmental Assessment Model), https://github.com/un-fao/GLEAM
+
+Original work
+-------------
+Copyright (C) Food and Agriculture Organization of the United Nations (FAO).
+Licensed under the GNU Affero General Public License, version 3 (AGPL-3.0).
+
+Authors of the R package: Ahmed Jou, Yassine Elaouni, Dominik Wisser,
+Lydia Lanzoni and Giuseppe Tempio, with contributions from Phyllis Ndungu',
+Yushan Li, Manling Xu, Zixin Wang, Narindra Rakotovao, Stewart Chikoloma and
+David OBrien. Funding: Federal Ministry of Agriculture, Food and Regional
+Identity of Germany.
+
+Modification notice (AGPL-3.0, section 5(a))
+--------------------------------------------
+Modified by the GLEAM Python port contributors; date of this notice:
+2026-10-08.
+
+The modifications are:
+
+* The R source code of the package, in the state described in
+  tools/r_reference/README.md (unreleased development branches of
+  un-fao/GLEAM merged together, plus one adaptation of run_emissions_direct()
+  dated 2026-10-06), was translated into Python and vectorised. The
+  intentional differences from the R code are listed in docs/R_PORT_NOTES.md.
+* The example input tables in src/gleampy/data/run_gleam_examples/ and
+  src/gleampy/data/run_modules_examples/ are copies of the R package's
+  inst/extdata/ files. emissions_direct_input_hrd_data.csv is the version
+  modified by that adaptation (two columns added, 2026-10-06).
+* src/gleampy/data/parameter_ranges.csv is a copy of the R package's
+  data-raw/parameter_ranges.csv with the spaces removed from one line
+  (ratio_me_to_ne).
+
+Python translation and modifications Copyright (C) 2026 the GLEAM Python port
+contributors. Licensed under the GNU Affero General Public License, version 3
+only (AGPL-3.0-only); see LICENSE.
+
+gleampy is an independent translation. It is not an official FAO product and
+is not endorsed by FAO.

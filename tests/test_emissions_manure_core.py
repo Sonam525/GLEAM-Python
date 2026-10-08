@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from gleam import (
+from gleampy import (
     GleamValidationError,
     calc_ch4_manure,
     calc_n2o_manure_direct,

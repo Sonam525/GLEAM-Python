@@ -1,0 +1,12 @@
+variable_name,herd_id,species_short,variable_type,value_total,label,unit,commodity_name,commodity_type
+"egg_production_mass_cohort",13,"CHK","Production","0","EggMass","kg","Eggs","Edible"
+"egg_production_number_cohort",13,"CHK","Production","0","EggNumber","eggs","Eggs","Edible"
+"egg_production_protein_cohort",13,"CHK","Production","0","EggProtein","kg protein","Eggs","Edible"
+"fibre_production_cohort",13,"CHK","Production","0","Fibre","kg","Fibre","Edible"
+"meat_production_bone_free_meat_cohort",13,"CHK","Production","4114.1465022629736","MeatBoneFree","kg bone-free meat","Meat","Edible"
+"meat_production_carcass_weight_cohort",13,"CHK","Production","5274.5467977730432","MeatCarcassWeight","kg carcass weight","Meat","Edible"
+"meat_production_live_weight_cohort",13,"CHK","Production","7325.7594413514489","MeatLiveWeight","kg live weight","Meat","Edible"
+"meat_production_protein_cohort",13,"CHK","Production","863.97076547522443","MeatProtein","kg protein","Meat","Edible"
+"milk_production_fpcm_cohort",13,"CHK","Production","0","MilkFatProteinCorrected","kg fat-protein corrected","Milk","Edible"
+"milk_production_mass_cohort",13,"CHK","Production","0","MilkRaw","kg","Milk","Edible"
+"milk_production_protein_cohort",13,"CHK","Production","0","MilkProtein","kg protein","Milk","Edible"

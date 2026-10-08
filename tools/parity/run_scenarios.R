@@ -4,7 +4,10 @@
 #   Rscript tools/parity/run_scenarios.R <path-to-GLEAM-R-source> <scenarios_dir>
 #
 # For each scenario directory, writes R outputs to <scenario>/r_out/<table>.csv
-# (numeric columns at 17 significant digits) or <scenario>/r_out/ERROR.txt.
+# (numeric columns at 17 significant digits) or, when R fails,
+# <scenario>/r_out/ERROR.txt (the condition message) and
+# <scenario>/r_out/ERROR_CLASS.txt (its classes: validation errors raised with
+# cli::cli_abort() are "rlang_error", crashes of base R code are not).
 
 args <- commandArgs(trailingOnly = TRUE)
 r_src <- args[[1]]
@@ -88,6 +91,7 @@ for (sd in sort(list.dirs(scen_dir, recursive = FALSE))) {
   )
   if (inherits(res, "error")) {
     writeLines(conditionMessage(res), file.path(out, "ERROR.txt"))
+    writeLines(class(res), file.path(out, "ERROR_CLASS.txt"))
     cat(sprintf("%s ERROR %s\n", basename(sd), conditionMessage(res)))
   } else {
     tabs <- flatten(res)

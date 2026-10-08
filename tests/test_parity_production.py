@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from golden_utils import assert_matches_golden
 
-from gleam import load_example, run_production_module
+from gleampy import load_example, run_production_module
 
 
 def test_production_module_matches_r():

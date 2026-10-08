@@ -6,14 +6,26 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import gleam
-from gleam import GleamValidationError
-from gleam.constants import GLEAM_COHORTS_DEMOGRAPHIC
-from gleam.io import example_path, read_csv
-from gleam.modules import emissions_direct as direct_mod
-from gleam.validation.emissions_direct_run import validate_run_emissions_direct_inputs
+import gleampy
+from gleampy import GleamValidationError
+from gleampy.constants import GLEAM_COHORTS_DEMOGRAPHIC
+from gleampy.io import example_path, read_csv
+from gleampy.modules import emissions_direct as direct_mod
+from gleampy.validation.emissions_direct_run import validate_run_emissions_direct_inputs
 
 KEYS = ["herd_id", "species_short", "cohort_short"]
+
+# testthat (edition 3) expect_equal() tolerance: sqrt(.Machine$double.eps), relative.
+TESTTHAT_TOLERANCE = 1.5e-8
+
+
+def assert_equal_r(actual: pd.DataFrame, expected: pd.DataFrame) -> None:
+    """Port of testthat ``expect_equal()`` on two tables: relative tolerance 1.5e-8.
+
+    pandas' own default (``rtol=1e-5``, ``atol=1e-8``) is about 650 times
+    looser and would accept differences the R tests reject.
+    """
+    pd.testing.assert_frame_equal(actual, expected, check_dtype=False, rtol=TESTTHAT_TOLERANCE, atol=0.0)
 
 
 def _mod(name: str) -> pd.DataFrame:
@@ -43,7 +55,7 @@ def d_direct() -> dict:
 
 @pytest.fixture(scope="module")
 def direct_quality(d_direct) -> pd.DataFrame:
-    q = gleam.run_ration_quality_module(d_direct["feed_rations"], d_direct["feed_params"], show_indicator=False)
+    q = gleampy.run_ration_quality_module(d_direct["feed_rations"], d_direct["feed_params"], show_indicator=False)
     return q.sort_values(KEYS, kind="mergesort").reset_index(drop=True)
 
 
@@ -55,7 +67,7 @@ def direct_quality_cols(direct_quality) -> list[str]:
 def direct_inputs(d, quality, has_herd_structure=True, primary=False) -> dict:
     cohort = d["cohort_structure"] if has_herd_structure else d["cohort_no_structure"]
     if primary:
-        cohort = gleam._utils.merge_dt(cohort, quality, by=KEYS)
+        cohort = gleampy._utils.merge_dt(cohort, quality, by=KEYS)
     args = dict(
         has_herd_structure=has_herd_structure,
         cohort_level_data=cohort.copy(),
@@ -111,21 +123,20 @@ def _key_sorted(df: pd.DataFrame) -> pd.DataFrame:
 
 @pytest.mark.parametrize("has_structure", [True, False])
 def test_primary_nutrition_matches_feed_derived_results(d_direct, direct_quality, direct_quality_cols, has_structure, monkeypatch):
-    feed_result = gleam.run_emissions_direct(**direct_inputs(d_direct, direct_quality, has_structure))
-    primary_result = gleam.run_emissions_direct(**direct_inputs(d_direct, direct_quality, has_structure, primary=True))
+    feed_result = gleampy.run_emissions_direct(**direct_inputs(d_direct, direct_quality, has_structure))
+    primary_result = gleampy.run_emissions_direct(**direct_inputs(d_direct, direct_quality, has_structure, primary=True))
 
     feed_chrt = _key_sorted(feed_result["cohort_level_results"])
     prim_chrt = _key_sorted(primary_result["cohort_level_results"])[list(feed_chrt.columns)]
-    pd.testing.assert_frame_equal(prim_chrt, feed_chrt, check_dtype=False)
+    assert_equal_r(prim_chrt, feed_chrt)
     for key in ("herd_level_results", "allocation_long"):
-        pd.testing.assert_frame_equal(primary_result[key], feed_result[key], check_dtype=False)
+        assert_equal_r(primary_result[key], feed_result[key])
     for key, df in feed_result["aggregation_results"].items():
-        pd.testing.assert_frame_equal(primary_result["aggregation_results"][key], df, check_dtype=False)
+        assert_equal_r(primary_result["aggregation_results"][key], df)
 
-    pd.testing.assert_frame_equal(
+    assert_equal_r(
         prim_chrt[direct_quality_cols].reset_index(drop=True),
         direct_quality[direct_quality_cols].reset_index(drop=True),
-        check_dtype=False,
     )
     assert not any("_ration_" in c for c in feed_result["cohort_level_results"].columns)
     emissions = feed_result["aggregation_results"]["results_emissions"]
@@ -152,17 +163,13 @@ def test_primary_nutrition_matches_feed_derived_results(d_direct, direct_quality
                     "bone_free_meat_fraction", "meat_protein_fraction",
                 ]
             )
-            factors = gleam.run_emissions_direct(**args)
+            factors = gleampy.run_emissions_direct(**args)
         assert list(factors) == list(feed_result)
         assert factors["allocation_long"] is None
         assert factors["aggregation_results"] is None
         factor_cols = list(factors["cohort_level_results"].columns)
         assert not any(("_production_" in c) or ("_allocation_" in c) for c in factor_cols)
-        pd.testing.assert_frame_equal(
-            _key_sorted(factors["cohort_level_results"]),
-            feed_chrt[factor_cols],
-            check_dtype=False,
-        )
+        assert_equal_r(_key_sorted(factors["cohort_level_results"]), feed_chrt[factor_cols])
 
 
 @pytest.mark.parametrize("bad_value", [None, np.nan, 1, "TRUE", [], [True, False]])
@@ -170,26 +177,38 @@ def test_emission_factors_only_requires_single_logical(d_direct, direct_quality,
     args = direct_inputs(d_direct, direct_quality)
     args["emission_factors_only"] = bad_value
     with pytest.raises(GleamValidationError, match="emission_factors_only.*single logical value"):
-        gleam.run_emissions_direct(**args)
+        gleampy.run_emissions_direct(**args)
     with pytest.raises(GleamValidationError, match="emission_factors_only.*single logical value"):
         validate_run_emissions_direct_inputs(**_validator_args(args))
 
 
 def test_direct_emissions_match_full_pipeline_sources(d_direct, direct_quality):
     args = direct_inputs(d_direct, direct_quality)
-    direct = gleam.run_emissions_direct(**args)
+    direct = gleampy.run_emissions_direct(**args)
     args["feed_emissions"] = d_direct["feed_emissions"]
-    full = gleam.run_gleam(**args)
+    full = gleampy.run_gleam(**args)
     full_em = full["aggregation_results"]["results_emissions"]
     full_em = full_em[full_em["variable_name"].str.match(r"^(ch4|n2o)_(enteric|manure)")].reset_index(drop=True)
-    pd.testing.assert_frame_equal(direct["aggregation_results"]["results_emissions"], full_em, check_dtype=False)
+    assert_equal_r(direct["aggregation_results"]["results_emissions"], full_em)
+
+
+def test_assert_equal_r_uses_testthat_tolerance(d_direct, direct_quality):
+    em = gleampy.run_emissions_direct(**direct_inputs(d_direct, direct_quality))["aggregation_results"]["results_emissions"]
+    for eps, fails in ((1e-7, True), (5e-6, True), (1e-9, False)):
+        bad = em.copy()
+        bad.loc[0, "value_total_allocated_co2eq"] = em["value_total_allocated_co2eq"].iloc[0] * (1 + eps)
+        if fails:
+            with pytest.raises(AssertionError):
+                assert_equal_r(bad, em)
+        else:
+            assert_equal_r(bad, em)
 
 
 def test_user_supplied_nitrogen_changes_intake_and_manure(d_direct, direct_quality):
     args = direct_inputs(d_direct, direct_quality, primary=True)
-    baseline = gleam.run_emissions_direct(**args)
+    baseline = gleampy.run_emissions_direct(**args)
     args["cohort_level_data"]["ration_nitrogen"] = args["cohort_level_data"]["ration_nitrogen"] * 1.1
-    changed = gleam.run_emissions_direct(**args)
+    changed = gleampy.run_emissions_direct(**args)
     before, after = baseline["cohort_level_results"], changed["cohort_level_results"]
     np.testing.assert_allclose(after["ration_nitrogen"], before["ration_nitrogen"] * 1.1, rtol=1.5e-8)
     np.testing.assert_allclose(after["nitrogen_intake"], before["nitrogen_intake"] * 1.1, rtol=1.5e-8)
@@ -202,12 +221,12 @@ def test_omitted_feed_tables_require_every_primary_quality_column(d_direct, dire
     args.pop("feed_rations")
     args.pop("feed_params")
     with pytest.raises(GleamValidationError, match="primary nutritional quality"):
-        gleam.run_emissions_direct(**args)
+        gleampy.run_emissions_direct(**args)
     for col in direct_quality_cols:
         args = direct_inputs(d_direct, direct_quality, primary=True)
         args["cohort_level_data"] = args["cohort_level_data"].drop(columns=[col])
         with pytest.raises(GleamValidationError, match=col):
-            gleam.run_emissions_direct(**args)
+            gleampy.run_emissions_direct(**args)
 
 
 @pytest.mark.parametrize("primary", [True, False])
@@ -218,7 +237,7 @@ def test_feed_tables_must_be_supplied_together(d_direct, direct_quality, primary
     args["feed_params"] = d_direct["feed_params"]
     args[field] = None
     with pytest.raises(GleamValidationError, match="together, or omit both"):
-        gleam.run_emissions_direct(**args)
+        gleampy.run_emissions_direct(**args)
 
 
 def test_primary_quality_cannot_be_combined_with_feed_tables(d_direct, direct_quality):
@@ -226,7 +245,7 @@ def test_primary_quality_cannot_be_combined_with_feed_tables(d_direct, direct_qu
     args["feed_rations"] = d_direct["feed_rations"]
     args["feed_params"] = d_direct["feed_params"]
     with pytest.raises(GleamValidationError, match="Do not provide.*ration_gross_energy"):
-        gleam.run_emissions_direct(**args)
+        gleampy.run_emissions_direct(**args)
 
 
 @pytest.mark.parametrize("bad_value", [np.nan, "unknown", -1, np.inf])
@@ -236,24 +255,24 @@ def test_primary_quality_uses_range_validation(d_direct, direct_quality, direct_
         n = len(args["cohort_level_data"])
         args["cohort_level_data"][col] = pd.Series([bad_value] * n, dtype=object if isinstance(bad_value, str) else float)
         with pytest.raises(GleamValidationError, match=col):
-            gleam.run_emissions_direct(**args)
+            gleampy.run_emissions_direct(**args)
 
 
 def test_primary_mode_retains_other_input_checks(d_direct, direct_quality):
     args = direct_inputs(d_direct, direct_quality, primary=True)
     args["cohort_level_data"]["daily_weight_gain"] = 0.5
     with pytest.raises(GleamValidationError, match="Do not provide.*daily_weight_gain"):
-        gleam.run_emissions_direct(**args)
+        gleampy.run_emissions_direct(**args)
 
     args = direct_inputs(d_direct, direct_quality, primary=True)
     args["herd_level_data"]["herd_id"] = args["herd_level_data"]["herd_id"].astype(str) + "_bad"
     with pytest.raises(GleamValidationError, match="same.*herd_id"):
-        gleam.run_emissions_direct(**args)
+        gleampy.run_emissions_direct(**args)
 
     args = direct_inputs(d_direct, direct_quality, primary=True)
     args["manure_management_system_factors"] = None
     with pytest.raises(GleamValidationError, match="manure_management_system_factors"):
-        gleam.run_emissions_direct(**args)
+        gleampy.run_emissions_direct(**args)
 
 
 @pytest.mark.parametrize("has_structure", [False, True])
@@ -265,4 +284,63 @@ def test_direct_emissions_require_all_six_cohorts(d_direct, direct_quality, has_
     args["cohort_level_data"] = c[c.cohort_short == "FA"].reset_index(drop=True)
     args["emission_factors_only"] = factors_only
     with pytest.raises(GleamValidationError, match="exactly 6 rows"):
-        gleam.run_emissions_direct(**args)
+        gleampy.run_emissions_direct(**args)
+
+
+# ---- numpy booleans behave like Python booleans (R's isTRUE) ---------------
+
+
+def _run_example(name: str) -> pd.DataFrame:
+    return read_csv(example_path(name, "run_gleam_examples"))
+
+
+def _herd9_args() -> dict:
+    """Herd 9 (PGS with FN / MN) of the run_gleam examples, start weights != weaning weight."""
+    def h9(df):
+        return df[df["herd_id"] == 9].reset_index(drop=True)
+
+    herd = h9(_run_example("master_hrd_lvl_mixed_data.csv"))
+    herd["live_weight_female_nondemographic_start"] = 10.0
+    herd["live_weight_male_nondemographic_start"] = 10.0
+    return dict(
+        cohort_level_data=h9(_run_example("master_chrt_lvl_no_structure_mixed_data.csv")),
+        herd_level_data=herd,
+        feed_rations=h9(_run_example("feed_rations_share_chrt.csv")),
+        feed_params=_run_example("feed_quality.csv"),
+        manure_management_system_fraction=h9(_run_example("manure_management_system_fraction.csv")),
+        manure_management_system_factors=h9(_run_example("manure_management_system_factors.csv")),
+        show_indicator=False,
+    )
+
+
+def _assert_results_identical(actual: dict, expected: dict) -> None:
+    assert list(actual) == list(expected)
+    for key, exp in expected.items():
+        if isinstance(exp, dict):
+            _assert_results_identical(actual[key], exp)
+        elif exp is None:
+            assert actual[key] is None, key
+        else:
+            pd.testing.assert_frame_equal(actual[key], exp, check_exact=True, obj=key)
+
+
+@pytest.mark.parametrize("factors_only", [False, True])
+def test_numpy_bool_switches_match_python_bools(factors_only):
+    args = _herd9_args()
+    expected = gleampy.run_emissions_direct(
+        has_herd_structure=False, run_demographic=True, run_nondemographic=True,
+        emission_factors_only=factors_only, **args,
+    )
+    cohort = args["cohort_level_data"]
+    got = gleampy.run_emissions_direct(
+        has_herd_structure=np.False_,
+        run_demographic=cohort["cohort_short"].isin(GLEAM_COHORTS_DEMOGRAPHIC).any(),
+        run_nondemographic=cohort["cohort_short"].isin(["FN", "MN"]).any(),
+        emission_factors_only=np.bool_(factors_only),
+        validate_inputs=np.True_,
+        **args,
+    )
+    _assert_results_identical(got, expected)
+    # R replaces the start weights by the weaning weight when both herd modules run
+    herd = expected["herd_level_results"]
+    assert (herd["live_weight_female_nondemographic_start"] == herd["live_weight_at_weaning"]).all()

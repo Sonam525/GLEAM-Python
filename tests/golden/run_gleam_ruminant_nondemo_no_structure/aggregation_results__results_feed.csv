@@ -1,0 +1,6 @@
+variable_name,herd_id,species_short,variable_type,value_total,label,unit
+"ration_intake",1,"CTL","Feed","81792310851.946152","DryMatterIntake","kg dry matter"
+"ration_intake",3,"SHP","Feed","2052337927.0697761","DryMatterIntake","kg dry matter"
+"ration_intake",5,"GTS","Feed","744281645.6226294","DryMatterIntake","kg dry matter"
+"ration_intake",7,"BFL","Feed","912925920.59409094","DryMatterIntake","kg dry matter"
+"ration_intake",11,"CML","Feed","11250067219.698017","DryMatterIntake","kg dry matter"

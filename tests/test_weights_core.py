@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import gleam
-from gleam import (
+import gleampy
+from gleampy import (
     GleamValidationError,
     calc_avg_weights,
     calc_cohort_weights,
@@ -235,9 +235,9 @@ def test_calc_cohort_weights_rejects_missing_live_weight_male_adult_for_ma():
 
 
 def test_public_names_are_registered():
-    assert gleam.calc_cohort_weights is calc_cohort_weights
-    assert gleam.calc_avg_weights is calc_avg_weights
-    assert gleam.calc_daily_weight_gain is calc_daily_weight_gain
+    assert gleampy.calc_cohort_weights is calc_cohort_weights
+    assert gleampy.calc_avg_weights is calc_avg_weights
+    assert gleampy.calc_daily_weight_gain is calc_daily_weight_gain
 
 
 def test_missing_required_message_lists_inputs_like_r():

@@ -1,0 +1,2 @@
+`offtake_rate` = 1 is out of range; expected value should be ≥ -2 and <
+1.

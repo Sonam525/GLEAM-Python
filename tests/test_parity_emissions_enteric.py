@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from golden_utils import assert_matches_golden
 
-from gleam import load_example, run_emissions_enteric_module
+from gleampy import load_example, run_emissions_enteric_module
 
 
 def test_emissions_enteric_module_matches_r():

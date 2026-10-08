@@ -1,0 +1,7 @@
+herd_id	species_short	cohort_short	cohort_duration_days	offtake_rate	death_rate	high_activity_fraction	low_activity_fraction	nondemo_productive_phase_id	is_egg_producing
+13	CHK	FA	365.0	0.18	0.06	0.05	0.15	NA	FALSE
+13	CHK	FJ	3.0	0.08	0.12	0.05	0.15	NA	FALSE
+13	CHK	FS	167.0	0.12	0.08	0.05	0.15	NA	FALSE
+13	CHK	MA	365.0	0.75	0.09	0.05	0.15	NA	FALSE
+13	CHK	MJ	3.0	0.12	0.12	0.05	0.15	NA	FALSE
+13	CHK	MS	167.0	0.7	0.09	0.05	0.15	NA	FALSE

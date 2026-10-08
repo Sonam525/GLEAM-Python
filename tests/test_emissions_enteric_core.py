@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from gleam import (
+from gleampy import (
     GleamValidationError,
     calc_ch4_enteric,
     calc_conversion_factor_ym,

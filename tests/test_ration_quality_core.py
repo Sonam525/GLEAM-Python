@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import gleam
-from gleam import (
+import gleampy
+from gleampy import (
     GleamValidationError,
     calc_feed_digestibility_fraction,
     calc_ration_ash,
@@ -241,7 +241,7 @@ def test_public_names_are_registered():
         "calc_ration_metabolizable_energy", "calc_ration_gross_energy",
         "calc_ration_nitrogen_content", "calc_ration_urinary_energy_fraction", "calc_ration_ash",
     ):
-        assert callable(getattr(gleam, name))
+        assert callable(getattr(gleampy, name))
 
 
 def test_chickens_use_the_pig_parameters_like_r():

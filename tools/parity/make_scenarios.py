@@ -7,6 +7,12 @@ GWP set). ``run_scenarios.R`` runs them through the R package and
 
 Usage:
     python tools/parity/make_scenarios.py OUT_DIR [N_PER_BASE] [SEED]
+
+``N_PER_BASE`` defaults to 10 and ``SEED`` to 20261006, the documented run
+of 30 scenarios. Every share of the ration and manure tables is perturbed and
+renormalised per herd, cohort and non-demographic phase, demographic cohorts
+(phase NA) included. The scenario files depend only on the seed, not on the
+pandas version.
 """
 
 from __future__ import annotations
@@ -18,7 +24,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from gleam.io import example_path, read_csv
+from gleampy.io import example_path, read_csv
 
 BASES = {
     # name: (cohort file, herd file, herd filter, has_herd_structure, run_demographic, run_nondemographic)
@@ -76,13 +82,41 @@ def _scale(df: pd.DataFrame, col: str, factors: np.ndarray, lo=None, hi=None) ->
 
 
 def _renormalize(df: pd.DataFrame, value_col: str, keys: list[str], rng: np.random.Generator, spread: float) -> None:
+    """Perturb the shares in ``value_col`` and rescale each group to sum to one (in place).
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Table of shares (fractions summing to 1 per group).
+    value_col : str
+        Share column.
+    keys : list of str
+        Group columns. A missing key (``nondemo_productive_phase_id`` of the
+        demographic cohorts) is a group value of its own, on every pandas
+        version: groups are formed on the key values themselves with
+        ``dropna=False``, never on their string spelling (pandas 3 keeps NaN
+        missing under ``astype(str)``, which silently skipped those groups).
+    rng : numpy.random.Generator
+        Random generator.
+    spread : float
+        Relative half-width of the uniform perturbation.
+    """
     v = df[value_col].to_numpy(dtype=float) * rng.uniform(1 - spread, 1 + spread, len(df))
-    tmp = df[keys].copy()
-    for k in keys:
-        tmp[k] = tmp[k].astype(str)
+    tmp = pd.DataFrame({k: _plain_key(df[k]) for k in keys})
     tmp["v"] = v
-    tot = tmp.groupby(keys, sort=False)["v"].transform("sum").to_numpy()
+    tot = tmp.groupby(keys, sort=False, dropna=False)["v"].transform("sum").to_numpy(dtype=float)
+    if np.isnan(tot).any():
+        raise AssertionError(f"{value_col}: share groups with an undefined total; check the key columns {keys}")
     df[value_col] = np.where(tot > 0, v / tot, df[value_col].to_numpy(dtype=float))
+
+
+def _plain_key(s: pd.Series) -> pd.Series:
+    """A group key column as plain values: float for numbers (NaN when missing), object otherwise."""
+    if isinstance(s.dtype, pd.CategoricalDtype):
+        s = s.astype(object)
+    if pd.api.types.is_numeric_dtype(s.dtype) and not pd.api.types.is_bool_dtype(s.dtype):
+        return pd.Series(s.to_numpy(dtype=float, na_value=np.nan), index=s.index)
+    return pd.Series([None if pd.isna(x) else x for x in s.tolist()], index=s.index, dtype=object)
 
 
 def _filter(df: pd.DataFrame, which: str | None) -> pd.DataFrame:
@@ -93,6 +127,22 @@ def _filter(df: pd.DataFrame, which: str | None) -> pd.DataFrame:
 
 
 def make_scenario(base: str, rng: np.random.Generator, spread: float = 0.15) -> tuple[dict, dict]:
+    """One randomly perturbed run_gleam() scenario.
+
+    Parameters
+    ----------
+    base : str
+        Example to perturb: ``"structure"``, ``"mixed"`` or ``"nondemo"``.
+    rng : numpy.random.Generator
+        Random generator.
+    spread : float
+        Relative half-width of the uniform perturbations (default 0.15).
+
+    Returns
+    -------
+    tuple of (dict, dict)
+        Input tables by run_gleam() argument name, and the scalar arguments.
+    """
     chrt_f, hrd_f, which, has_structure, run_demo, run_nondemo = BASES[base]
     ex = lambda name: read_csv(example_path(name, "run_gleam_examples"))  # noqa: E731
     chrt = _filter(ex(chrt_f), which)
@@ -144,15 +194,26 @@ def make_scenario(base: str, rng: np.random.Generator, spread: float = 0.15) -> 
 
 
 def write_scenario(out: Path, tables: dict, args: dict) -> None:
+    """Write a scenario: tab-separated tables at 17 significant digits and ``args.json``.
+
+    Parameters
+    ----------
+    out : pathlib.Path
+        Scenario directory (created).
+    tables : dict
+        Input tables by run_gleam() argument name.
+    args : dict
+        Scalar arguments.
+    """
     out.mkdir(parents=True, exist_ok=True)
     for name, df in tables.items():
         df.to_csv(out / f"{name}.csv", sep="\t", index=False, na_rep="", float_format="%.17g")
-    (out / "args.json").write_text(json.dumps(args, indent=2))
+    (out / "args.json").write_text(json.dumps(args, indent=2) + "\n")
 
 
 def main() -> None:
     out_dir = Path(sys.argv[1])
-    n = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+    n = int(sys.argv[2]) if len(sys.argv) > 2 else 10
     seed = int(sys.argv[3]) if len(sys.argv) > 3 else 20261006
     rng = np.random.default_rng(seed)
     for base in BASES:

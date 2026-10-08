@@ -1,28 +1,51 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+# setuptools 77 is the first release that accepts an SPDX `license` string
+# and `license-files` (PEP 639).
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "gleam-py"
+name = "gleampy"
 version = "0.8.0"
-description = "Python port of FAO's Global Livestock Environmental Assessment Model (GLEAM-X)"
+description = "Python port of FAO's Global Livestock Environmental Assessment Model (GLEAM-X) R package"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "AGPL-3.0-only" }
+license = "AGPL-3.0-only"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "GLEAM Python port contributors" }]
-dependencies = ["numpy>=1.24", "pandas>=2.0"]
+# Floors: the oldest versions the test suite runs on in CI (job
+# "minimum versions" in .github/workflows/tests.yml installs exactly
+# numpy 1.26.0, pandas 2.2.0 and pytest 7.0.0). pandas 2.2 is the first
+# release whose Series.to_numpy() turns nullable Int64 / Float64 data with
+# missing values into float64 NaN instead of object pd.NA; numpy 1.26 is the
+# first release with wheels for Python 3.12.
+dependencies = ["numpy>=1.26", "pandas>=2.2"]
+keywords = ["livestock", "greenhouse gas", "emissions", "GLEAM", "IPCC", "life cycle assessment"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering",
+]
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+# Everything docs/PORTING_GUIDE.md "Setting up" runs: the test suite and the
+# lint check used in CI (`ruff check src tools tests --select E9,F`).
+dev = ["pytest>=7", "ruff>=0.4"]
 
 [project.urls]
+Homepage = "https://github.com/Sonam525/GLEAM-Python"
+Repository = "https://github.com/Sonam525/GLEAM-Python"
+Issues = "https://github.com/Sonam525/GLEAM-Python/issues"
 "Original R package" = "https://github.com/un-fao/GLEAM"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-gleam = ["data/*.csv", "data/run_gleam_examples/*.csv", "data/run_modules_examples/*.csv"]
+gleampy = ["data/*.csv", "data/run_gleam_examples/*.csv", "data/run_modules_examples/*.csv"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

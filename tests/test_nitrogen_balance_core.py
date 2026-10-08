@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from gleam import (
+from gleampy import (
     GleamValidationError,
     calc_nitrogen_excretion,
     calc_nitrogen_intake,
@@ -367,3 +367,18 @@ def test_run_nitrogen_balance_module_without_validation_warns_and_matches():
     with pytest.warns(UserWarning, match="Input validation has been turned off"):
         res = run_nitrogen_balance_module(chrt, hrd, show_indicator=False, validate_inputs=False)
     pd.testing.assert_frame_equal(res, ref)
+
+
+def test_retention_na_handling_follows_r():
+    # A component is 0 when its driver is missing or not positive,
+    # but a missing milk_protein_fraction with positive milk yield gives NA in
+    # R: calc_nitrogen_retention("CTL", "FA", milk_protein_fraction = NA_real_,
+    # milk_yield_day = 20, daily_weight_gain = 0) is NA.
+    assert np.isnan(calc_nitrogen_retention("CTL", "FA", milk_protein_fraction=np.nan, milk_yield_day=20,
+                                            daily_weight_gain=0))
+    assert calc_nitrogen_retention("CTL", "FA", milk_protein_fraction=np.nan, milk_yield_day=0,
+                                   daily_weight_gain=0.5) == approx(0.5 * 0.0326)
+    assert calc_nitrogen_retention("CTL", "MA", milk_protein_fraction=np.nan, milk_yield_day=20,
+                                   daily_weight_gain=0.5) == approx(0.5 * 0.0326)
+    assert calc_nitrogen_retention("CTL", "FA", milk_yield_day=np.nan, daily_weight_gain=np.nan) == 0.0
+    assert calc_nitrogen_retention("SHP", "FN", 0.05, 0.0, 0.1, fibre_yield_year=np.nan) == approx(0.1 * 0.026)

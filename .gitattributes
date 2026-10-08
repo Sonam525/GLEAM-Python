@@ -1,2 +1,5 @@
 * text=auto eol=lf
 *.csv text eol=lf
+*.sh text eol=lf
+# Patches are applied byte for byte by tools/r_reference/build_r_reference.sh.
+*.patch -text -eol

@@ -1,7 +1,40 @@
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
-.pytest_cache/
+.eggs/
 build/
 dist/
 .venv/
+venv/
+
+# Test, lint and coverage output
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Notebooks
+.ipynb_checkpoints/
+
+# R session files (tools/ contains R scripts)
+.Rhistory
+.RData
+.Rproj.user/
+
+# Editors and operating systems
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local environment and scratch output (golden regeneration, parity
+# scenarios, benchmark snapshots); keep such output outside tests/golden
+.env
+/scratch/
+/scenarios/
+/*.pkl

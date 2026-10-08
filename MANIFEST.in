@@ -1,0 +1,12 @@
+# Source distribution contents beyond the package itself (src/gleampy and its
+# data files are added automatically). The sdist carries the complete test
+# suite, including the R golden outputs and their helper module, so
+# `python -m pytest` runs from an unpacked sdist.
+include LICENSE NOTICE README.md
+include tests/golden_utils.py
+graft tests
+graft docs
+graft examples
+graft tools
+global-exclude *.py[cod] .DS_Store
+prune .github

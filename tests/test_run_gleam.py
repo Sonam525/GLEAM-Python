@@ -6,10 +6,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import gleam
-from gleam import GleamValidationError
-from gleam._utils import as_float, merge_dt, rbind_fill
-from gleam.io import example_path, read_csv
+import gleampy
+from gleampy import GleamValidationError
+from gleampy._utils import as_float, merge_dt, rbind_fill
+from gleampy.io import example_path, read_csv
 
 DEMOGRAPHIC_COHORTS = ["FA", "FJ", "FS", "MA", "MJ", "MS"]
 
@@ -22,8 +22,35 @@ def _mod(name: str) -> pd.DataFrame:
     return read_csv(example_path(name, "run_modules_examples"))
 
 
+# testthat (edition 3) expect_equal() tolerance: sqrt(.Machine$double.eps), relative.
+TESTTHAT_TOLERANCE = 1.5e-8
+
+
+def assert_equal_r(actual: pd.DataFrame, expected: pd.DataFrame) -> None:
+    """Port of testthat ``expect_equal()`` on two tables: relative tolerance 1.5e-8."""
+    pd.testing.assert_frame_equal(actual, expected, check_dtype=False, rtol=TESTTHAT_TOLERANCE, atol=0.0)
+
+
+def assert_results_identical(actual: dict, expected: dict) -> None:
+    """Every output table of two pipeline results is identical (same code, same inputs)."""
+    assert list(actual) == list(expected)
+    for key, exp in expected.items():
+        act = actual[key]
+        if isinstance(exp, dict):
+            assert_results_identical(act, exp)
+        elif exp is None:
+            assert act is None, key
+        else:
+            pd.testing.assert_frame_equal(act, exp, check_exact=True, obj=key)
+
+
 @pytest.fixture(scope="module")
 def d_gleam() -> dict:
+    return gleam_test_data()
+
+
+def gleam_test_data() -> dict:
+    """``d_gleam`` of test-run_gleam.R: the run_gleam example tables, herd table made consistent."""
     cohort_no_structure = _run("master_chrt_lvl_no_structure_mixed_data.csv")
     cohort_structure = _run("master_chrt_lvl_structure_data.csv")
     herd = _run("master_hrd_lvl_mixed_data.csv")
@@ -86,7 +113,7 @@ def d_gleam_mixed(d_gleam) -> dict:
 
 
 def run_gleam_default(data: dict, has_herd_structure=False, **overrides):
-    use_structure = has_herd_structure is True
+    use_structure = isinstance(has_herd_structure, (bool, np.bool_)) and bool(has_herd_structure)  # isTRUE()
     cohort = data["cohort_structure"] if use_structure else data["cohort_no_structure"]
     args = dict(
         has_herd_structure=has_herd_structure,
@@ -102,7 +129,7 @@ def run_gleam_default(data: dict, has_herd_structure=False, **overrides):
         show_indicator=False,
     )
     args.update(overrides)
-    return gleam.run_gleam(**args)
+    return gleampy.run_gleam(**args)
 
 
 @pytest.fixture(scope="module")
@@ -124,7 +151,7 @@ def test_rejects_na_has_herd_structure(d_gleam):
 
 
 def test_existing_herd_structure_ignores_herd_simulation_defaults(d_gleam):
-    gleam.run_gleam(
+    gleampy.run_gleam(
         has_herd_structure=True,
         cohort_level_data=d_gleam["cohort_structure"],
         herd_level_data=_run("master_hrd_lvl_mixed_data.csv"),
@@ -278,14 +305,14 @@ def test_structure_path_preserves_cohort_set_per_herd(res_with_structure, d_glea
     for hid in pd.unique(cohort.herd_id):
         a = _rows(cohort[cohort.herd_id == hid], ["cohort_short", "nondemo_productive_phase_id"])
         b = _rows(inp[inp.herd_id == hid], ["cohort_short", "nondemo_productive_phase_id"])
-        pd.testing.assert_frame_equal(a, b, check_dtype=False)
+        assert_equal_r(a, b)
 
 
 def test_structure_path_preserves_cohort_stock_size(res_with_structure, d_gleam):
     cols = ["herd_id", "cohort_short", "nondemo_productive_phase_id", "cohort_stock_size"]
     a = _rows(res_with_structure["cohort_level_results"], cols)
     b = _rows(d_gleam["cohort_structure"], cols)
-    pd.testing.assert_frame_equal(a, b, check_dtype=False)
+    assert_equal_r(a, b)
 
 
 def test_key_numeric_outputs_have_no_na(res_with_structure):
@@ -316,14 +343,55 @@ def test_aggregation_tables_non_empty(res_with_structure, table):
 # ---- Python-specific: inputs are not mutated, validation switch -------------
 
 
-def test_run_gleam_does_not_mutate_inputs(d_gleam):
+@pytest.mark.parametrize("has_structure", [True, False])
+def test_run_gleam_does_not_mutate_inputs(d_gleam, has_structure):
     before = {k: v.copy() for k, v in d_gleam.items()}
-    run_gleam_default(d_gleam, has_herd_structure=True)
+    run_gleam_default(d_gleam, has_herd_structure=has_structure)
     for k, v in d_gleam.items():
-        pd.testing.assert_frame_equal(v, before[k])
+        pd.testing.assert_frame_equal(v, before[k], check_exact=True)
 
 
-def test_validate_inputs_false_warns_and_matches(d_gleam, res_with_structure):
-    with pytest.warns(gleam.GleamWarning, match="validation has been turned off"):
-        res = run_gleam_default(d_gleam, has_herd_structure=True, validate_inputs=False)
-    pd.testing.assert_frame_equal(res["cohort_level_results"], res_with_structure["cohort_level_results"])
+@pytest.mark.parametrize("has_structure", [True, False])
+def test_validate_inputs_false_warns_and_matches(d_gleam, has_structure):
+    expected = run_gleam_default(d_gleam, has_herd_structure=has_structure)
+    with pytest.warns(gleampy.GleamWarning, match="validation has been turned off"):
+        res = run_gleam_default(d_gleam, has_herd_structure=has_structure, validate_inputs=False)
+    assert_results_identical(res, expected)
+
+
+# ---- numpy booleans behave like Python booleans (R's isTRUE) ---------------
+
+
+def _herd9_with_start_weights(d_gleam: dict) -> dict:
+    """Herd 9 (PGS, FN and MN) with start weights that differ from the weaning weight."""
+    d = {k: (v[v["herd_id"] == 9].reset_index(drop=True) if "herd_id" in v.columns else v) for k, v in d_gleam.items()}
+    herd = d["herd"].copy()
+    herd["live_weight_female_nondemographic_start"] = 10.0
+    herd["live_weight_male_nondemographic_start"] = 10.0
+    d["herd"] = herd
+    return d
+
+
+def test_numpy_bool_switches_match_python_bools(d_gleam):
+    """R's isTRUE(): np.True_ (e.g. from ``Series.any()``) must work like True.
+
+    With both herd modules on, R replaces the non-demographic start weights
+    by the weaning weight; that step must not be skipped for numpy booleans.
+    """
+    d = _herd9_with_start_weights(d_gleam)
+    cohort = d["cohort_no_structure"]
+    expected = run_gleam_default(d, has_herd_structure=False, run_demographic=True, run_nondemographic=True)
+    flags = dict(
+        has_herd_structure=np.False_,
+        run_demographic=cohort["cohort_short"].isin(DEMOGRAPHIC_COHORTS).any(),
+        run_nondemographic=cohort["cohort_short"].isin(["FN", "MN"]).any(),
+        validate_inputs=np.True_,
+    )
+    assert all(isinstance(v, np.bool_) for v in flags.values())
+    assert_results_identical(run_gleam_default(d, **flags), expected)
+    herd = expected["herd_level_results"]
+    assert (herd["live_weight_female_nondemographic_start"] == herd["live_weight_at_weaning"]).all()
+
+
+def test_numpy_bool_herd_structure_switch(d_gleam, res_with_structure):
+    assert_results_identical(run_gleam_default(d_gleam, has_herd_structure=np.True_), res_with_structure)

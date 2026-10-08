@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
 
-from gleam import (
+from gleampy import (
     GleamValidationError,
     assign_allocation_shares,
     calc_allocation_shares,
@@ -18,7 +20,7 @@ from gleam import (
     calc_work_allocation_energy,
     run_allocation_module,
 )
-from gleam.io import load_example
+from gleampy.io import load_example
 
 REL = 1.5e-8  # testthat tolerance
 
@@ -714,3 +716,178 @@ def test_vectorised_allocation_shares_matches_scalar_calls():
             "egg_allocation_energy": [0, 0, 0, 0, 0, 0, 80, 0, 0, 8],
         },
     )
+
+
+# ---- assign_allocation_shares: rules evaluated per grid row (088) --------------
+
+
+def _assign_reference(allocation_herd_long, emissions_vars, commodities, non_allocated, commodity_col, allocation_col):
+    """Row-by-row reference: R's three ``:=`` rules applied to every expanded row."""
+    from gleampy._utils import as_float, as_str, isin, merge_dt
+
+    vars_ = sorted({v for v in as_str(list(emissions_vars)).tolist()}, key=lambda v: (v is not None, v or ""))
+    comms = sorted({v for v in as_str(list(commodities)).tolist()}, key=lambda v: (v is not None, v or ""))
+    grid = pd.DataFrame(
+        {
+            "variable_name": np.repeat(np.array(vars_, dtype=object), len(comms)),
+            "commodity_name": np.tile(np.array(comms, dtype=object), len(vars_)),
+        }
+    )
+    out = merge_dt(allocation_herd_long, grid, by=commodity_col)
+    non_alloc = isin(as_str(out["variable_name"]), list(non_allocated))
+    comm = as_str(out[commodity_col])
+    is_other = np.array([v is not None and v == "Other" for v in comm], dtype=bool)
+    not_other = np.array([v is not None and v != "Other" for v in comm], dtype=bool)
+    share = as_float(out[allocation_col]).copy()
+    share[non_alloc & is_other] = 1.0
+    share[non_alloc & not_other] = 0.0
+    share[~non_alloc & is_other] = 0.0
+    out[allocation_col] = share
+    return out
+
+
+@pytest.mark.parametrize("commodity_dtype", [object, "string", "category"])
+def test_assign_allocation_shares_matches_rowwise_rules(commodity_dtype):
+    long = pd.DataFrame(
+        {
+            "herd_id": [2, 2, 1, 1, 1, 3, 3],
+            "species_short": ["SHP", "SHP", "CTL", "CTL", "CTL", "PGS", None],
+            "commodity_name": pd.Series(["Fibre", "Other", "Meat", None, "Other", "Meat", "Eggs"], dtype=commodity_dtype),
+            "allocation_share": [0.2, 0.0, 0.7, 0.3, np.nan, 1.0, 0.5],
+        }
+    )
+    args = dict(
+        emissions_vars=["ch4_manure_pasture", "ch4_enteric", "n2o_manure_burned_total", "ch4_enteric", None],
+        commodities=["Other", "Milk", "Meat", "Fibre", None, "Eggs"],
+        non_allocated_emission_sources=["ch4_manure_pasture", "n2o_manure_burned_total"],
+        commodity_col="commodity_name",
+        allocation_col="allocation_share",
+    )
+    got = assign_allocation_shares(long, **args)
+    ref = _assign_reference(
+        long, args["emissions_vars"], args["commodities"], args["non_allocated_emission_sources"],
+        args["commodity_col"], args["allocation_col"],
+    )
+    pd.testing.assert_frame_equal(got, ref, check_exact=True)
+    assert "__gleam_grid_row__" not in got.columns
+    # a missing commodity matches the NA grid commodity and is left unassigned
+    na_rows = got[got["commodity_name"].isna()]
+    assert na_rows["allocation_share"].tolist() == [0.3] * len(na_rows) and len(na_rows) == 4
+
+
+def test_assign_allocation_shares_with_variable_name_column_fails_like_r():
+    long = pd.DataFrame({"commodity_name": ["Meat"], "allocation_share": [1.0], "variable_name": ["x"]})
+    with pytest.raises(KeyError, match="variable_name"):
+        assign_allocation_shares(long, ["ch4_enteric"], ["Meat"], [], "commodity_name", "allocation_share")
+
+
+def test_calc_cohort_to_herd_aggregation_nullable_and_categorical_keys():
+    data = pd.DataFrame(
+        {
+            "herd_id": pd.Categorical(["b", "a", "b", None]),
+            "x": pd.array([1, 2, None, 4], dtype="Int64"),
+            "y": [1.5, 2.5, 3.5, 4.5],
+            # Explicit int64: a bare np.array([1, 2, 3, 4]) is int32 on Windows under numpy 1.x.
+            "z": np.array([1, 2, 3, 4], dtype=np.int64),
+        }
+    )
+    out = calc_cohort_to_herd_aggregation(data, "herd_id", ["x", "y", "z"], "cohort_short")
+    assert out["herd_id"].astype(object).tolist()[:2] == ["b", "a"] and pd.isna(out["herd_id"].iloc[2])
+    assert str(out["x"].dtype) == "Int64"
+    assert out["x"].isna().tolist() == [True, False, False] and out["x"].iloc[1] == 2
+    assert out["y"].tolist() == [5.0, 2.5, 4.5]
+    assert out["z"].dtype == np.int64 and out["z"].tolist() == [4, 2, 4]
+
+
+# ---- egg flag: logical only (047, 094) ----------------------------------------
+
+
+@pytest.mark.parametrize("flag", ["TRUE", "FALSE", "T", 1, 0, 1.0])
+def test_non_logical_egg_flag_is_rejected_like_r(flag):
+    """R's validate_is_egg_producing_flag rejects character and numeric flags."""
+    with pytest.raises(GleamValidationError, match=r"`is_egg_producing` must be logical \(TRUE/FALSE\)"):
+        calc_egg_allocation_energy("CHK", "FA", 10, is_egg_producing=flag)
+    with pytest.raises(GleamValidationError, match=r"`is_egg_producing` must be logical \(TRUE/FALSE\)"):
+        calc_meat_allocation_energy(
+            "CHK", "FA", 10, live_weight_cohort_at_slaughter=1.9, live_weight_at_birth=0.04, is_egg_producing=flag
+        )
+
+
+def test_check_logical_flag_is_gone():
+    import gleampy.validation.allocation_core as ac
+
+    assert not hasattr(ac, "check_logical_flag")
+
+
+@pytest.mark.parametrize(
+    "flag,expected",
+    [(True, 100.4), (np.True_, 100.4), (1, 0.0), (1.0, 0.0), ("TRUE", 0.0), (np.int64(1), 0.0), (None, 0.0)],
+)
+def test_egg_allocation_energy_uses_istrue_without_validation(flag, expected):
+    """094: with validation off only a logical TRUE produces egg energy (R's isTRUE)."""
+    from gleampy.validation._shared import validation_disabled
+
+    with validation_disabled():
+        assert calc_egg_allocation_energy("CHK", "FA", 10, is_egg_producing=flag) == approx(expected)
+        vec = calc_egg_allocation_energy(["CHK", "CHK"], ["FA", "FA"], [10, 10],
+                                         is_egg_producing=np.array([flag, False], dtype=object))
+    np.testing.assert_allclose(vec, [expected, 0.0], rtol=1e-15)
+
+
+# ---- run_allocation_module: simulation_duration and columns -------------------
+
+
+@pytest.mark.parametrize("validate", [True, False])
+@pytest.mark.parametrize("bad", ["two", "per-row", "series", "none"])
+def test_run_allocation_module_rejects_non_single_simulation_duration(bad, validate):
+    """R cannot run with a vector simulation_duration (its by-row assignments fail)."""
+    chrt, hrd = _allocation_inputs()
+    value = {
+        "two": [365, 365],
+        "per-row": np.full(len(chrt), 365.0),
+        "series": pd.Series(np.full(len(chrt), 365.0)),
+        "none": None,
+    }[bad]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with pytest.raises(GleamValidationError, match=r"^`simulation_duration` must be a single numeric value\.$"):
+            run_allocation_module(chrt, hrd, simulation_duration=value, show_indicator=False, validate_inputs=validate)
+
+
+def test_run_allocation_module_accepts_length_one_simulation_duration():
+    chrt, hrd = _allocation_inputs()
+    ref = run_allocation_module(chrt, hrd, simulation_duration=180, show_indicator=False)
+    for value in ([180], np.array([180.0]), np.int64(180)):
+        res = run_allocation_module(chrt, hrd, simulation_duration=value, show_indicator=False)
+        pd.testing.assert_frame_equal(res["allocation_long"], ref["allocation_long"])
+        pd.testing.assert_frame_equal(res["cohort_allocation_inputs"], ref["cohort_allocation_inputs"])
+
+
+def test_run_allocation_module_nondemo_phase_id_is_always_required():
+    """046: only is_egg_producing is conditional on CHK herds."""
+    chrt, hrd = _allocation_inputs()
+    non_chk = chrt[chrt["species_short"] != "CHK"].drop(columns="is_egg_producing")
+    non_chk_herd = hrd[hrd["species_short"] != "CHK"]
+    with pytest.raises(GleamValidationError, match=r'Missing required columns in `cohort_level_data`: "nondemo_productive_phase_id"'):
+        run_allocation_module(non_chk.drop(columns="nondemo_productive_phase_id"), non_chk_herd, show_indicator=False)
+    doc = " ".join(run_allocation_module.__doc__.split())
+    assert "``nondemo_productive_phase_id`` (required; NA for demographic cohorts)" in doc
+    assert "``is_egg_producing`` (required when ``CHK`` herds are present; added as NA otherwise)" in doc
+
+
+def test_run_allocation_module_unvalidated_reads_missing_phase_id_as_na():
+    """R only validates nondemo_productive_phase_id, so an unvalidated run works without it."""
+    chrt, hrd = _allocation_inputs()
+    no_phase = chrt.drop(columns="nondemo_productive_phase_id")
+    with pytest.warns(UserWarning, match="validation has been turned off"):
+        res = run_allocation_module(no_phase, hrd, show_indicator=False, validate_inputs=False)
+    ref = run_allocation_module(chrt, hrd, show_indicator=False)
+    pd.testing.assert_frame_equal(res["allocation_long"], ref["allocation_long"])
+
+
+def test_run_allocation_module_unvalidated_without_egg_flag_for_chk_is_a_validation_error():
+    """R's egg energy reads is_egg_producing on every row ("object not found")."""
+    chrt, hrd = _allocation_inputs()
+    with pytest.warns(UserWarning, match="validation has been turned off"):
+        with pytest.raises(GleamValidationError, match=r'Missing required columns in `cohort_level_data`: "is_egg_producing"'):
+            run_allocation_module(chrt.drop(columns="is_egg_producing"), hrd, show_indicator=False, validate_inputs=False)

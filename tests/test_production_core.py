@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import itertools
+import warnings
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from gleam import (
+from gleampy import (
     GleamValidationError,
     calc_egg_production,
     calc_fibre_production,
@@ -442,3 +443,167 @@ def test_run_production_module_without_validation_warns_and_matches():
     with pytest.warns(UserWarning, match="Input validation has been turned off"):
         res = run_production_module(chrt, hrd, show_indicator=False, validate_inputs=False)
     pd.testing.assert_frame_equal(res, ref)
+
+
+# ---- simulation_duration must be a single value (032, 067) ----------------------
+
+
+@pytest.mark.parametrize("validate", [True, False])
+@pytest.mark.parametrize("bad", ["two", "two-equal", "per-row", "per-row-varying", "series", "none"])
+def test_run_production_module_rejects_non_single_simulation_duration(bad, validate):
+    """R: validate_scalar_numeric() requires length 1 ("must be a single numeric value")."""
+    chrt, hrd = _example()
+    per_row = np.full(len(chrt), 365.0)
+    varying = per_row.copy()
+    varying[0] = 1.0
+    value = {
+        "two": [365, 180],
+        "two-equal": [365, 365],
+        "per-row": per_row,
+        "per-row-varying": varying,
+        "series": pd.Series(per_row),
+        "none": None,
+    }[bad]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with pytest.raises(GleamValidationError, match=r"^`simulation_duration` must be a single numeric value\.$"):
+            run_production_module(chrt, hrd, simulation_duration=value, show_indicator=False, validate_inputs=validate)
+
+
+def test_run_production_module_accepts_length_one_simulation_duration():
+    chrt, hrd = _example()
+    ref = run_production_module(chrt, hrd, simulation_duration=180, show_indicator=False)
+    for value in ([180], np.array([180.0]), pd.Series([180.0]), np.int64(180), 180.0):
+        res = run_production_module(chrt, hrd, simulation_duration=value, show_indicator=False)
+        pd.testing.assert_frame_equal(res, ref)
+
+
+def test_run_production_module_rejects_non_numeric_simulation_duration():
+    chrt, hrd = _example()
+    for value in ("365", True, np.nan, [np.nan]):
+        with pytest.raises(GleamValidationError, match=r"`simulation_duration` must be a single numeric value"):
+            run_production_module(chrt, hrd, simulation_duration=value, show_indicator=False)
+    with pytest.raises(GleamValidationError, match=r"`simulation_duration` must be positive"):
+        run_production_module(chrt, hrd, simulation_duration=[-1], show_indicator=False)
+
+
+# ---- is_egg_producing: only a logical TRUE produces eggs (094) ---------------------
+
+
+@pytest.mark.parametrize(
+    "flag,producing",
+    [(True, True), (np.True_, True), (1, False), (1.0, False), ("TRUE", False), ("T", False),
+     (np.int64(1), False), (2.0, False), (None, False), (np.nan, False)],
+)
+def test_calc_egg_production_gates_on_istrue_without_validation(flag, producing):
+    """R's calc_egg_production returns zeros unless isTRUE(is_egg_producing)."""
+    from gleampy.validation._shared import validation_disabled
+
+    with validation_disabled():
+        out = calc_egg_production("CHK", "FA", 36500, 0.06, 365, is_egg_producing=flag)
+        vec = calc_egg_production(
+            ["CHK", "CHK"], ["FA", "FA"], 36500, 0.06, 365, is_egg_producing=np.array([flag, True], dtype=object)
+        )
+    assert out["egg_production_number_cohort"] == (36500.0 if producing else 0.0)
+    assert vec["egg_production_number_cohort"].tolist() == [36500.0 if producing else 0.0, 36500.0]
+
+
+def test_run_production_module_unvalidated_numeric_flags_give_no_eggs():
+    """A 1/0 flag column is rejected with validation and gives zero eggs without (R: isTRUE(1) is FALSE)."""
+    chrt, hrd = _example()
+    numeric = chrt.copy()
+    numeric["is_egg_producing"] = [1.0 if v is True else 0.0 for v in chrt["is_egg_producing"]]
+    with pytest.raises(GleamValidationError, match=r"must be logical \(TRUE/FALSE\)"):
+        run_production_module(numeric, hrd, show_indicator=False)
+    with pytest.warns(UserWarning, match="validation has been turned off"):
+        res = run_production_module(numeric, hrd, show_indicator=False, validate_inputs=False)
+    assert (res[EGG_KEYS] == 0).all().all()
+    ref = run_production_module(chrt, hrd, show_indicator=False)
+    assert (ref[EGG_KEYS] > 0).any().any()
+
+
+# ---- columns R reads only for the rows that need them ------------------------------
+
+
+def _with_laying_fn(chrt: pd.DataFrame) -> pd.DataFrame:
+    fa = chrt[(chrt["species_short"] == "CHK") & (chrt["cohort_short"] == "FA")].iloc[[0]].copy()
+    fa["cohort_short"] = "FN"
+    fa["nondemo_productive_phase_id"] = 2.0
+    return pd.concat([chrt, fa], ignore_index=True)
+
+
+@pytest.mark.parametrize("validate", [True, False])
+def test_run_production_module_missing_egg_flag_with_chk_is_a_validation_error(validate):
+    chrt, hrd = _example()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with pytest.raises(GleamValidationError, match=r'^Missing required columns in `cohort_level_data`: "is_egg_producing"$'):
+            run_production_module(chrt.drop(columns="is_egg_producing"), hrd, show_indicator=False,
+                                  validate_inputs=validate)
+
+
+@pytest.mark.parametrize("col", ["egg_output_human_consumption", "egg_average_weight"])
+def test_run_production_module_missing_egg_herd_columns_for_laying_cohorts(col):
+    chrt, hrd = _example()
+    with pytest.raises(GleamValidationError, match=rf'^Missing required columns in `herd_level_data`: "{col}"$'):
+        run_production_module(chrt, hrd.drop(columns=col), show_indicator=False)
+    # not needed when no cohort lays eggs (R reads them lazily)
+    no_laying = chrt.assign(is_egg_producing=False)
+    res = run_production_module(no_laying, hrd.drop(columns=col), show_indicator=False)
+    assert (res[EGG_KEYS] == 0).all().all()
+
+
+def test_run_production_module_missing_phase_id_only_needed_for_laying_fn():
+    chrt, hrd = _example()
+    with_fn = _with_laying_fn(chrt)
+    ref = run_production_module(with_fn, hrd, show_indicator=False)
+    assert ref.loc[len(chrt), "egg_production_number_cohort"] > 0
+    with pytest.raises(
+        GleamValidationError, match=r'^Missing required columns in `cohort_level_data`: "nondemo_productive_phase_id"$'
+    ):
+        run_production_module(with_fn.drop(columns="nondemo_productive_phase_id"), hrd, show_indicator=False)
+    # only laying FA cohorts: the phase id is never read, as in R
+    res = run_production_module(chrt.drop(columns="nondemo_productive_phase_id"), hrd, show_indicator=False)
+    full = run_production_module(chrt, hrd, show_indicator=False)
+    np.testing.assert_array_equal(res[OUTPUT_COLUMNS].to_numpy(), full[OUTPUT_COLUMNS].to_numpy())
+
+
+# R validates the flag placement before it forces the herd egg columns, so a
+# misplaced TRUE flag is reported as such even when those columns are absent
+# (messages checked with Rscript on the same inputs).
+_EGG_FLAG_PLACEMENT_CASES = {
+    "non_chk_true": ("CTL", "FA", None, True, r'^`is_egg_producing` can be TRUE only for "CHK"\.$'),
+    "chk_ma_true": ("CHK", "MA", None, True, r'^`is_egg_producing` can be TRUE only for CHK cohorts "FA" or "FN"\.$'),
+    "chk_fn_phase_1": ("CHK", "FN", 1.0, True,
+                       r'^`is_egg_producing` can be TRUE for "FN" only when `nondemo_productive_phase_id` is'),
+    "chk_fn_no_phase_column": ("CHK", "FN", "drop", True,
+                               r'^Missing required columns in `cohort_level_data`: "nondemo_productive_phase_id"$'),
+    # the cohort check comes before R's phase check, which forces the absent column
+    "chk_ma_and_fn_no_phase_column": ("CHK", "MA+FN", "drop", True,
+                                      r'^`is_egg_producing` can be TRUE only for CHK cohorts "FA" or "FN"\.$'),
+    "chk_na": ("CHK", "ALL", None, None, r'^`is_egg_producing` must be a single non-missing logical value for "CHK"\.$'),
+}
+
+
+@pytest.mark.parametrize("case", list(_EGG_FLAG_PLACEMENT_CASES))
+def test_run_production_module_flag_placement_errors_come_before_missing_egg_columns(case):
+    species, cohorts, phase, value, message = _EGG_FLAG_PLACEMENT_CASES[case]
+    chrt, hrd = _example()
+    chrt = chrt.assign(is_egg_producing=pd.Series([False] * len(chrt), dtype=object))
+    fa = chrt[(chrt["species_short"] == "CHK") & (chrt["cohort_short"] == "FA")].iloc[[0]].copy()
+    fa["cohort_short"] = "FN"
+    chrt = pd.concat([chrt, fa], ignore_index=True)  # a CHK FN cohort, not laying
+    sel = chrt["species_short"].eq(species)
+    if cohorts != "ALL":
+        sel &= chrt["cohort_short"].isin(cohorts.split("+"))
+    chrt.loc[sel, "is_egg_producing"] = value
+    if phase == "drop":
+        chrt = chrt.drop(columns="nondemo_productive_phase_id")
+    elif phase is not None:
+        chrt.loc[sel, "nondemo_productive_phase_id"] = phase
+    no_egg_cols = hrd.drop(columns=["egg_output_human_consumption", "egg_average_weight"])
+    with pytest.raises(GleamValidationError, match=message):
+        run_production_module(chrt, no_egg_cols, show_indicator=False)
+    # with the egg columns present the error is the same
+    with pytest.raises(GleamValidationError, match=message):
+        run_production_module(chrt, hrd, show_indicator=False)

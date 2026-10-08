@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-import gleam
-from gleam.io import load_example
+import gleampy
+from gleampy.io import load_example
 
 
 def ex(name: str) -> pd.DataFrame:
@@ -42,7 +42,7 @@ rows = []
 for milk_yield in (15.0, 20.0, 25.0, 30.0, 35.0):
     herd = base["herd_level_data"].copy()
     herd["milk_yield_day"] = milk_yield
-    res = gleam.run_gleam(**{**base, "herd_level_data": herd})
+    res = gleampy.run_gleam(**{**base, "herd_level_data": herd})
 
     emissions = res["aggregation_results"]["results_emissions"]
     production = res["aggregation_results"]["results_production"]

@@ -4,9 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import gleam
-from gleam.validation import GleamValidationError
-from gleam.validation.nondemographic_herd_run import validate_run_nondemographic_herd_module_inputs
+import gleampy
+from gleampy.validation import GleamValidationError
+from gleampy.validation.nondemographic_herd_run import validate_run_nondemographic_herd_module_inputs
 
 TOL = 1.5e-8  # testthat's default tolerance
 
@@ -69,7 +69,7 @@ def test_validate_run_nondemographic_herd_module_inputs_rejects_missing_phase_1(
 
 
 def test_calc_nondemo_cycle_geometry_returns_expected_cycle_structure():
-    res = gleam.calc_nondemo_cycle_geometry(
+    res = gleampy.calc_nondemo_cycle_geometry(
         phase1_nondemo_duration=30, phase2_nondemo_duration=50, rest_between_nondemo_cycles_duration=20
     )
     assert res["cycle_length"] == pytest.approx(100, rel=TOL)
@@ -80,7 +80,7 @@ def test_calc_nondemo_cycle_geometry_returns_expected_cycle_structure():
 
 
 def test_calc_nondemo_start_sizes_returns_expected_entrants_per_cycle():
-    res = gleam.calc_nondemo_start_sizes(
+    res = gleampy.calc_nondemo_start_sizes(
         cohort_stock_nondemo_annual_entrants=120, total_nondemo_cycle_starts_to_distribute=4
     )
     assert isinstance(res, dict)
@@ -88,7 +88,7 @@ def test_calc_nondemo_start_sizes_returns_expected_entrants_per_cycle():
 
 
 def test_calc_nondemo_offtake_total_horizon_follows_assessment_year_cycle_starts():
-    res = gleam.calc_nondemo_offtake_total_horizon(
+    res = gleampy.calc_nondemo_offtake_total_horizon(
         cohort_stock_nondemo_end_phase1=90,
         cohort_stock_nondemo_end_phase2=80,
         cohort_stock_nondemo_annual_entrants=120,
@@ -106,7 +106,7 @@ def test_calc_nondemo_offtake_total_horizon_follows_assessment_year_cycle_starts
 
 
 def test_calc_nondemo_offtake_total_horizon_keeps_annual_offtake_when_cycle_exceeds_365_days():
-    res = gleam.calc_nondemo_offtake_total_horizon(
+    res = gleampy.calc_nondemo_offtake_total_horizon(
         cohort_stock_nondemo_end_phase1=90,
         cohort_stock_nondemo_end_phase2=75,
         cohort_stock_nondemo_annual_entrants=120,
@@ -124,7 +124,7 @@ def test_calc_nondemo_offtake_total_horizon_keeps_annual_offtake_when_cycle_exce
 
 
 def test_calc_nondemo_phase_returns_zero_stock_for_zero_duration_phases():
-    res = gleam.calc_nondemo_phase(
+    res = gleampy.calc_nondemo_phase(
         cohort_stock_nondemo_start_by_phase=25,
         productive_phase_nondemo_duration=0,
         death_rate_nondemo_phase=0,
@@ -136,7 +136,7 @@ def test_calc_nondemo_phase_returns_zero_stock_for_zero_duration_phases():
 
 
 def test_run_nondemographic_herd_module_returns_expected_output_columns():
-    res = gleam.run_nondemographic_herd_module(
+    res = gleampy.run_nondemographic_herd_module(
         cohort_level_data=_cohorts(cohort_duration_days=[30.0, 50.0, 30.0, 50.0]),
         herd_level_data=_herd(),
         simulation_duration=365,
@@ -157,7 +157,7 @@ def test_run_nondemographic_herd_module_returns_expected_output_columns():
 
 
 def test_run_nondemographic_herd_module_assigns_cohort_durations_from_herd_level_inputs():
-    res = gleam.run_nondemographic_herd_module(
+    res = gleampy.run_nondemographic_herd_module(
         cohort_level_data=_cohorts(), herd_level_data=_herd(**PHASES_30_50), simulation_duration=365
     )
     clr = res["cohort_level_results"]
@@ -176,7 +176,7 @@ def test_run_nondemographic_herd_module_assigns_cohort_durations_from_herd_level
 
 def test_run_nondemographic_herd_module_works_without_cohort_duration_days_column():
     cohort_level_data = _cohorts()
-    res = gleam.run_nondemographic_herd_module(
+    res = gleampy.run_nondemographic_herd_module(
         cohort_level_data=cohort_level_data, herd_level_data=_herd(**PHASES_30_50), simulation_duration=365
     )
     assert "cohort_duration_days" not in cohort_level_data.columns
@@ -198,7 +198,7 @@ def test_run_nondemographic_herd_module_drops_zero_stock_non_demo_rows():
         "phase1_nondemo_mal_duration_days": [20.0],
         "phase2_nondemo_mal_duration_days": [0.0],
     })
-    res = gleam.run_nondemographic_herd_module(
+    res = gleampy.run_nondemographic_herd_module(
         cohort_level_data=cohort_level_data, herd_level_data=herd_level_data, simulation_duration=365
     )
     clr = res["cohort_level_results"]
@@ -209,51 +209,136 @@ def test_run_nondemographic_herd_module_drops_zero_stock_non_demo_rows():
 
 # ---- additional checks of the Python port ----
 def test_nondemo_core_functions_are_vectorised():
-    geom = gleam.calc_nondemo_cycle_geometry(np.array([30.0, 60, 0]), np.array([50.0, 365, 0]), 20.0)
+    geom = gleampy.calc_nondemo_cycle_geometry(np.array([30.0, 60, 0]), np.array([50.0, 365, 0]), 20.0)
     np.testing.assert_array_equal(geom["number_full_nondemo_cycles"], [3, 0, 0])
     np.testing.assert_array_equal(geom["partial_phase2_nondemo_duration"], [35, 305, 0])
     np.testing.assert_array_equal(geom["total_nondemo_cycle_starts_to_distribute"], [4, 1, 0])
-    phase = gleam.calc_nondemo_phase(np.array([10.0, 10.0]), np.array([10.0, 0.0]), 0.1, np.array([5.0, 0.0]))
+    phase = gleampy.calc_nondemo_phase(np.array([10.0, 10.0]), np.array([10.0, 0.0]), 0.1, np.array([5.0, 0.0]))
     assert phase["time_simulated_nondemographic"].tolist() == [5.0, 0.0]
     assert phase["cohort_stock_nondemo"]["end"][1] == 0.0
-    out = gleam.assign_nondemographic_phase_durations(
+    out = gleampy.assign_nondemographic_phase_durations(
         ["FN", "FN", "MN", "FA"], [1, 2, 2, np.nan], [5.0, 6.0, 7.0, 8.0], 30, np.nan, 31, 32
     )
     np.testing.assert_array_equal(out, [30, 6, 32, 8])
-    assert gleam.calc_nondemographic_total_durations(["FN", "MN", "FN"], [30, 40, np.nan]) == {
+    assert gleampy.calc_nondemographic_total_durations(["FN", "MN", "FN"], [30, 40, np.nan]) == {
         "total_nondemo_fem_duration_days": 30.0, "total_nondemo_mal_duration_days": 40.0,
     }
 
 
 def test_calc_nondemo_start_sizes_returns_zero_without_cycle_start():
     # R returns the bare value 0 (not a list) when there is no cycle start
-    assert gleam.calc_nondemo_start_sizes(120, 0) == 0
+    assert gleampy.calc_nondemo_start_sizes(120, 0) == 0
 
 
 def test_run_nondemographic_herd_module_fails_like_r_without_cycle_start():
     herd = _herd(**{**PHASES_30_50, "phase1_nondemo_mal_duration_days": 0.0})
     with pytest.raises(ValueError, match="operator is invalid for atomic vectors"):
-        gleam.run_nondemographic_herd_module(_cohorts(), herd, show_indicator=False)
+        gleampy.run_nondemographic_herd_module(_cohorts(), herd, show_indicator=False)
 
 
-def test_run_nondemographic_herd_module_truncates_into_integer_duration_column():
-    # data.table coerces the assigned doubles to an integer cohort_duration_days column
+#: R (run_nondemographic_herd_module) with a double cohort_duration_days column,
+#: herd-level FN phases 30.7 / 50.2 days. With an integer column (fread's type
+#: for whole numbers) R truncates them to 30 / 50 (stock 7.8082191780821963 /
+#: 10.865082310859236): an R bug the port does not replicate.
+R_FRACTIONAL_PHASES = {
+    "cohort_duration_days": [30.699999999999999, 50.200000000000003],
+    "cohort_stock_size_unscaled": [7.990410958904115, 10.704827930972678],
+    "partial_nondemo_phase_duration": [30.699999999999999, 31.599999999999955],
+    "offtake_heads_unscaled": [0, 80.999999999999972],
+}
+
+
+@pytest.mark.parametrize("dtype", ["int64", "Int64", "float64", "float64_with_nan", "Float64", "object"])
+def test_run_nondemographic_herd_module_never_truncates_fractional_phase_durations(dtype, recwarn):
+    """Fractional herd-level phase durations are kept whatever the cohort_duration_days dtype.
+
+    R's grouped `:=` truncates them when fread typed the column as integer (a
+    data.table coercion, not part of the model); Python always computes in
+    float64 and matches R's double-column results. Int64 used to crash.
+    """
+    values = {"float64_with_nan": [np.nan, 10.0], "object": [5, None]}.get(dtype, [5, 10])
+    col = pd.Series(values, dtype={"float64_with_nan": "float64"}.get(dtype, dtype))
     cohort = pd.DataFrame({
         "herd_id": [1, 1], "cohort_short": ["FN", "FN"], "nondemo_productive_phase_id": [1.0, 2.0],
-        "death_rate": [0.1, 0.1], "cohort_duration_days": np.array([5, 10], dtype="int64"),
+        "death_rate": [0.1, 0.1], "cohort_duration_days": col,
     })
     herd = _herd(**{**PHASES_30_50, "phase1_nondemo_fem_duration_days": 30.7,
                     "phase2_nondemo_fem_duration_days": 50.2,
                     "phase1_nondemo_mal_duration_days": np.nan, "phase2_nondemo_mal_duration_days": np.nan})
-    with pytest.warns(gleam.GleamWarning, match="truncated"):
-        res = gleam.run_nondemographic_herd_module(cohort, herd, show_indicator=False)
+    res = gleampy.run_nondemographic_herd_module(cohort, herd, show_indicator=False)
+    assert not [w for w in recwarn if issubclass(w.category, gleampy.GleamWarning)]
     clr = res["cohort_level_results"]
-    assert clr["cohort_duration_days"].tolist() == [30, 50]
-    # values printed by R for the same case
-    assert clr["cohort_stock_size_unscaled"].tolist() == pytest.approx([7.808219, 10.865082], rel=1e-6)
+    assert clr["cohort_duration_days"].dtype == np.float64
+    for col_name, expected in R_FRACTIONAL_PHASES.items():
+        np.testing.assert_allclose(clr[col_name].to_numpy(float), expected, rtol=1e-12, err_msg=col_name)
+    assert res["herd_level_results"]["total_nondemo_fem_duration_days"].tolist() == pytest.approx(
+        [80.900000000000006], rel=1e-15)
+
+
+def test_partial_phase_shorter_than_one_day_is_rejected_like_r_with_its_cause():
+    # R bug replicated: the sub-day remainder of the 365-day horizon is checked against the
+    # `cohort_duration_days` range. R: "`cohort_duration_days` = 0.199999999999989 is out of range ..."
+    cohort = pd.DataFrame({"herd_id": ["h1"], "cohort_short": ["FN"], "nondemo_productive_phase_id": [1.0],
+                           "death_rate": [0.05], "cohort_duration_days": [90.2]})
+    herd = pd.DataFrame({"herd_id": ["h1"], "cohort_stock_fem_annual_nondemo": [1000.0],
+                         "cohort_stock_mal_annual_nondemo": [0.0], "rest_between_nondemo_cycles_duration": [1.0]})
+    with pytest.raises(GleamValidationError, match=(
+        r"^`cohort_duration_days` = 0.2 is out of range; expected value should be >= 1 and <= 8000\. "
+        r"The value is `partial_phase1_nondemo_duration`.*not an input value.*shorter than 1 day"
+    )):
+        gleampy.run_nondemographic_herd_module(cohort, herd, show_indicator=False)
+    # phase 2 = 40.5 days after 60 days of phase 1 and 1 day of rest: partial phase 2 of 0.5 day
+    cohort2 = pd.DataFrame({"herd_id": ["h1", "h1"], "cohort_short": ["FN", "FN"],
+                            "nondemo_productive_phase_id": [1.0, 2.0], "death_rate": [0.05, 0.03],
+                            "cohort_duration_days": [60.0, 40.5]})
+    with pytest.raises(GleamValidationError, match=r"= 0.5 is out of range.*`partial_phase2_nondemo_duration`"):
+        gleampy.run_nondemographic_herd_module(cohort2, herd, show_indicator=False)
+    with pytest.raises(GleamValidationError, match=r"`partial_phase1_nondemo_duration`"):
+        gleampy.calc_nondemo_offtake_total_horizon(90, 0, 1000, 200, 4, 0.2, 0, 90.2, 0, 365)
+    # the same block runs without validation (the remainder is a valid model input)
+    with pytest.warns(gleampy.GleamWarning, match="validation has been turned off"):
+        res = gleampy.run_nondemographic_herd_module(cohort, herd, show_indicator=False, validate_inputs=False)
+    assert res["cohort_level_results"]["partial_nondemo_phase_duration"].tolist() == pytest.approx([0.2], rel=1e-12)
+
+
+@pytest.mark.parametrize(("case", "expected"), [
+    ("missing_herd", r"herd 2, cohort block FN: the herd's row in `herd_level_data` is missing"),
+    ("nan_phase1", r"herd 1, cohort block FN: the phase 1 duration .* is missing"),
+    ("nan_rest", r"herd 1, cohort block FN: `rest_between_nondemo_cycles_duration` is missing"),
+    ("zero_phase1", r"^No non-demographic cycle start for herd 1, cohort block FN \(phase 1 duration is 0\)"),
+])
+def test_no_cycle_start_without_validation_names_the_missing_input(case, expected):
+    cohort = pd.DataFrame({"herd_id": [1, 1, 2, 2], "cohort_short": ["FN"] * 4,
+                           "nondemo_productive_phase_id": [1, 2, 1, 2], "death_rate": [0.1] * 4})
+    herd = _herd(**{**PHASES_30_50}).loc[[0, 0]].reset_index(drop=True)
+    herd["herd_id"] = [1, 2]
+    if case == "missing_herd":
+        herd = herd[herd["herd_id"] == 1]
+    elif case == "nan_phase1":
+        herd.loc[0, "phase1_nondemo_fem_duration_days"] = np.nan
+    elif case == "nan_rest":
+        herd.loc[0, "rest_between_nondemo_cycles_duration"] = np.nan
+    else:
+        herd.loc[0, "phase1_nondemo_fem_duration_days"] = 0.0
+    with pytest.warns(gleampy.GleamWarning, match="validation has been turned off"):
+        with pytest.raises(GleamValidationError, match=expected) as err:
+            gleampy.run_nondemographic_herd_module(cohort, herd, show_indicator=False, validate_inputs=False)
+    assert "np.int64" not in str(err.value)
+    assert ("(phase 1 duration is 0)" in str(err.value)) == (case == "zero_phase1")
+
+
+def test_run_nondemographic_herd_module_requires_a_scalar_simulation_duration():
+    with pytest.raises(GleamValidationError, match=r"^`simulation_duration` must be a single numeric value\.$"):
+        gleampy.run_nondemographic_herd_module(_cohorts(), _herd(**PHASES_30_50), simulation_duration=[365, 180],
+                                             show_indicator=False)
+    res = gleampy.run_nondemographic_herd_module(_cohorts(), _herd(**PHASES_30_50), simulation_duration=np.array([180.0]),
+                                               show_indicator=False)
+    ref = gleampy.run_nondemographic_herd_module(_cohorts(), _herd(**PHASES_30_50), simulation_duration=180,
+                                               show_indicator=False)
+    pd.testing.assert_frame_equal(res["cohort_level_results"], ref["cohort_level_results"])
 
 
 def test_run_nondemographic_herd_module_reports_r_scalar_validation_message():
     herd = _herd(**{**PHASES_30_50, "phase2_nondemo_mal_duration_days": 9000.0})
     with pytest.raises(GleamValidationError, match=r"^`cohort_duration_days` = 9000 is out of range"):
-        gleam.run_nondemographic_herd_module(_cohorts(), herd, show_indicator=False)
+        gleampy.run_nondemographic_herd_module(_cohorts(), herd, show_indicator=False)

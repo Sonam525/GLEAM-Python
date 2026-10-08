@@ -10,8 +10,8 @@ from __future__ import annotations
 import pytest
 from golden_utils import assert_frame_matches, assert_matches_golden, load_golden
 
-from gleam import run_aggregation_module, run_allocation_module
-from gleam.io import load_example
+from gleampy import run_aggregation_module, run_allocation_module
+from gleampy.io import load_example
 
 ALLOCATION_TABLES = ("cohort_allocation_inputs", "allocation_long")
 AGGREGATION_TABLES = ("results_emissions", "results_feed", "results_production", "results_nitrogen")

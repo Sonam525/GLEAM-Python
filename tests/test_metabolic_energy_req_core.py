@@ -13,8 +13,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import gleam
-from gleam import (
+import gleampy
+from gleampy import (
     calc_metabolic_energy_req_activity,
     calc_metabolic_energy_req_eggs,
     calc_metabolic_energy_req_fibre,
@@ -28,9 +28,9 @@ from gleam import (
     calc_rem_maintenance,
     calc_total_metabolic_energy_req,
 )
-from gleam._utils import lookup
-from gleam.io import load_example
-from gleam.validation import GleamValidationError, validation_disabled
+from gleampy._utils import lookup
+from gleampy.io import load_example
+from gleampy.validation import GleamValidationError, validation_disabled
 
 
 def approx(x):
@@ -583,9 +583,9 @@ def test_ration_intake_uses_metabolizable_energy_for_monogastrics():
 
 
 def test_public_api_exports_core_functions():
-    assert gleam.calc_metabolic_energy_req_maintenance is calc_metabolic_energy_req_maintenance
-    assert gleam.calc_ration_intake is calc_ration_intake
-    assert gleam.calc_metabolic_energy_req_eggs is calc_metabolic_energy_req_eggs
+    assert gleampy.calc_metabolic_energy_req_maintenance is calc_metabolic_energy_req_maintenance
+    assert gleampy.calc_ration_intake is calc_ration_intake
+    assert gleampy.calc_metabolic_energy_req_eggs is calc_metabolic_energy_req_eggs
 
 
 def test_scalar_inputs_return_python_float_and_vectors_return_arrays():
@@ -904,3 +904,155 @@ def test_validation_can_be_disabled():
     with validation_disabled():
         out = calc_ration_intake("CTL", -10, 50, 12)
     assert out == approx(-10 / 50)
+
+
+# --------------------------------------------------------------------------
+# R's ^ (R_pow) in the growth and maintenance equations
+# --------------------------------------------------------------------------
+
+# x, y, R's x ^ y (sprintf("%a") in R 4.6) for the cases where C pow, and so
+# numpy's **, differs from R: negative infinite base, negative base with an
+# infinite exponent, signed zero.
+_R_POW_EDGES = (
+    ("-Inf", "-Inf", "NaN"),
+    ("-Inf", "-0x1.8p+1", "0x0p+0"),
+    ("-Inf", "-0x1.8p-1", "NaN"),
+    ("-Inf", "-0x1p-1", "NaN"),
+    ("-Inf", "0x1.8p-1", "NaN"),
+    ("-Inf", "0x1.18d4fdf3b645ap+0", "NaN"),
+    ("-Inf", "Inf", "NaN"),
+    ("-Inf", "0x1p+1", "Inf"),
+    ("-Inf", "0x1.8p+1", "-Inf"),
+    ("-0x1p+1", "-Inf", "NaN"),
+    ("-0x1p+1", "Inf", "NaN"),
+    ("-0x1p+0", "-Inf", "NaN"),
+    ("-0x1p+0", "Inf", "NaN"),
+    ("-0x1p-1", "-Inf", "NaN"),
+    ("-0x1p-1", "Inf", "NaN"),
+    ("-0x1p+1", "0x1.8p-1", "NaN"),
+    ("-0x0p+0", "-0x1.8p+1", "Inf"),
+    ("-0x0p+0", "0x1p-1", "0x0p+0"),
+    ("-0x0p+0", "0x1.8p-1", "0x0p+0"),
+    ("-0x0p+0", "0x1.8p+1", "0x0p+0"),
+    ("0x0p+0", "-0x1.8p-1", "Inf"),
+    ("0x1p+0", "NaN", "0x1p+0"),
+    ("NaN", "0x0p+0", "0x1p+0"),
+    ("0x1p-1", "Inf", "0x0p+0"),
+    ("0x1p+1", "-Inf", "0x0p+0"),
+    ("Inf", "-0x1.8p-1", "0x0p+0"),
+)
+
+
+def _r_num(s):
+    return {"Inf": math.inf, "-Inf": -math.inf, "NaN": math.nan}.get(s) if s in ("Inf", "-Inf", "NaN") \
+        else float.fromhex(s)
+
+
+def test_power_follows_r_pow_edge_cases():
+    from gleampy.core.metabolic_energy_req import _r_pow
+
+    x = np.array([_r_num(c[0]) for c in _R_POW_EDGES])
+    y = np.array([_r_num(c[1]) for c in _R_POW_EDGES])
+    expected = np.array([_r_num(c[2]) for c in _R_POW_EDGES])
+    got = _r_pow(x, y)
+    np.testing.assert_array_equal(got, expected)
+    np.testing.assert_array_equal(np.signbit(got), np.signbit(expected))
+    # Finite inputs: exactly numpy's ** (C pow), so valid results are unchanged.
+    rng = np.random.default_rng(0)
+    base = rng.uniform(0, 800, 1000)
+    for e in (0.75, 1.097):
+        np.testing.assert_array_equal(_r_pow(base, e), base**e)
+
+
+def test_growth_with_negative_zero_mature_weight_is_nan_like_r():
+    # R: (lw_avg / (0.8 * -0))^0.75 = (-Inf)^0.75 = NaN; numpy's ** gives +Inf.
+    args = ("CTL", "FS", 449.8095, 649.619, 250)
+    kw = {"daily_weight_gain": 0.6056, "offtake_rate": 0.247, "cohort_duration_days": 710}
+    assert math.isnan(calc_metabolic_energy_req_growth(*args, live_weight_mature_stage=-0.0, **kw))
+    assert calc_metabolic_energy_req_growth(*args, live_weight_mature_stage=0.0, **kw) == math.inf
+    # MN mature weights are not range-checked: a tiny negative one overflows to -Inf.
+    with validation_disabled():
+        assert math.isnan(
+            calc_metabolic_energy_req_growth("CTL", "MN", *args[2:], live_weight_mature_stage=-5e-324, **kw)
+        )
+
+
+def test_module_rejects_nan_growth_from_negative_zero_mature_weight():
+    cohort = load_example("metabolic_energy_req_input_chrt_data.csv")
+    herd = load_example("metabolic_energy_req_input_hrd_data.csv")
+    c = cohort[cohort["herd_id"] == 1].reset_index(drop=True)
+    h = herd[herd["herd_id"] == 1].reset_index(drop=True)
+    c["live_weight_mature_stage"] = c["live_weight_mature_stage"].astype(float)
+    c.loc[c["cohort_short"] == "FS", "live_weight_mature_stage"] = -0.0
+    # R stops in validate_total_energy_inputs.
+    with pytest.raises(GleamValidationError, match="`metabolic_energy_req_growth` must be a single numeric value"):
+        gleampy.run_metabolic_energy_req_module(c, h, show_indicator=False)
+    with pytest.warns(gleampy.GleamWarning):
+        out = gleampy.run_metabolic_energy_req_module(c, h, show_indicator=False, validate_inputs=False)
+    fs = out[out["cohort_short"] == "FS"].iloc[0]
+    assert math.isnan(fs["metabolic_energy_req_growth"]) and math.isnan(fs["ration_intake"])
+
+
+# --------------------------------------------------------------------------
+# Behaviours replicated from R
+# --------------------------------------------------------------------------
+
+
+def test_laying_cohort_with_zero_stock_gets_infinite_egg_energy_like_r():
+    # R: Inf (and NaN for 0 / 0); the core validators accept a stock size of 0.
+    assert calc_metabolic_energy_req_eggs("CHK", "FA", 0, 180000, 0.06, 45, is_egg_producing=True) == math.inf
+    assert math.isnan(calc_metabolic_energy_req_eggs("CHK", "FA", 0, 0, 0.06, 45, is_egg_producing=True))
+
+
+def test_growth_of_chicken_adults_is_not_zero():
+    # R: calc_metabolic_energy_req_growth("CHK", "MA", daily_weight_gain = 0.01)
+    assert calc_metabolic_energy_req_growth("CHK", "MA", daily_weight_gain=0.01) == float.fromhex(
+        "0x1.1db22d0e56042p-2"
+    )
+    assert calc_metabolic_energy_req_growth("CTL", "FA") == 0.0
+    with validation_disabled():
+        assert math.isnan(calc_metabolic_energy_req_growth("SHP", "FA", 20, np.nan, 10, 50, 0.1, 0.1, 100))
+
+
+# --------------------------------------------------------------------------
+# Docstrings of the public functions
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "module",
+    [
+        "core.metabolic_energy_req", "modules.metabolic_energy_req",
+        "core.nitrogen_balance", "modules.nitrogen_balance",
+        "core.emissions_enteric", "modules.emissions_enteric",
+        "core.ration_quality", "modules.ration_quality",
+        "core.emissions_ration", "modules.emissions_ration",
+        "core.weights", "modules.weights",
+    ],
+)
+def test_public_functions_document_every_parameter(module):
+    import importlib
+    import inspect
+    import re
+
+    mod = importlib.import_module(f"gleampy.{module}")
+    public = [
+        fn for name, fn in inspect.getmembers(mod, inspect.isfunction)
+        if fn.__module__ == mod.__name__ and name.startswith(("calc_", "run_"))
+    ]
+    assert public
+    for fn in public:
+        doc = inspect.getdoc(fn) or ""
+        section = re.search(r"Parameters\n-+\n(.*?)(?:\n\n[A-Z][a-z]+\n-+\n|\Z)", doc, re.S)
+        assert section, f"{fn.__name__}: no Parameters section"
+        assert "Returns\n-------" in doc, f"{fn.__name__}: no Returns section"
+        documented = set()
+        lines = section.group(1).splitlines()
+        for i, line in enumerate(lines):
+            m = re.match(r"^(\w[\w, ]*) : ", line)
+            if m:
+                described = i + 1 < len(lines) and lines[i + 1].startswith("    ")
+                assert described, f"{fn.__name__}: {m.group(1)} has no description"
+                documented.update(p.strip() for p in m.group(1).split(","))
+        missing = [p for p in inspect.signature(fn).parameters if p not in documented]
+        assert not missing, f"{fn.__name__}: undocumented {missing}"

@@ -1,17 +1,40 @@
 # Generate golden reference outputs from the original GLEAM R package.
 #
-# Usage (from the gleam-py repository root):
-#   Rscript tools/r_reference/generate_golden.R <path-to-GLEAM-R-source> [out_dir] [case_regex]
+# Usage (from the gleampy repository root):
+#   Rscript tools/r_reference/generate_golden.R <path-to-GLEAM-R-source> <out_dir> [case_regex]
 #
 # Runs every run_*() example shipped with the R package and writes each
 # resulting table to <out_dir>/<case>/<table>.csv with numeric columns written
 # at 17 significant digits, so the Python port can be checked for numerical
 # parity. A case that errors in R is recorded in <out_dir>/<case>/ERROR.txt.
+# Files are written with LF line endings on every platform.
+#
+# Requires R >= 4.4 with pkgload and data.table (the package also imports cli);
+# see tools/r_reference/README.md.
 
 args <- commandArgs(trailingOnly = TRUE)
-r_src <- if (length(args) >= 1) args[[1]] else "../GLEAM"
-out_dir <- if (length(args) >= 2) args[[2]] else "tests/golden"
+if (length(args) < 2) {
+  stop("usage: Rscript tools/r_reference/generate_golden.R <R source> <out_dir> [case_regex]\n",
+       "  out_dir is required: pass a new, empty directory (see tools/r_reference/README.md).",
+       call. = FALSE)
+}
+r_src <- args[[1]]
+out_dir <- args[[2]]
 case_regex <- if (length(args) >= 3) args[[3]] else "."
+
+# Locate this script, so tests/data and tests/golden are found from any cwd.
+script_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+script_dir <- if (length(script_arg)) dirname(normalizePath(sub("^--file=", "", script_arg[[1]]))) else "tools/r_reference"
+same_dir <- function(a, b) {
+  a <- normalizePath(a, winslash = "/", mustWork = FALSE)
+  b <- normalizePath(b, winslash = "/", mustWork = FALSE)
+  if (.Platform$OS.type == "windows") tolower(a) == tolower(b) else a == b
+}
+if (same_dir(out_dir, file.path(script_dir, "..", "..", "tests", "golden"))) {
+  stop("refusing to write into tests/golden: pass a new, empty directory as out_dir, ",
+       "compare it with tests/golden and copy only the cases you meant to change ",
+       "(see tools/r_reference/README.md).", call. = FALSE)
+}
 
 suppressMessages(pkgload::load_all(r_src, quiet = TRUE, export_all = TRUE))
 library(data.table)
@@ -30,7 +53,7 @@ write_table <- function(dt, path) {
       data.table::set(dt, j = col, value = s)
     }
   }
-  data.table::fwrite(dt, path, na = "NA")
+  data.table::fwrite(dt, path, na = "NA", eol = "\n")
 }
 
 write_result <- function(case, result) {
@@ -57,7 +80,7 @@ run_case <- function(case, expr) {
     dir <- file.path(out_dir, case)
     dir.create(dir, recursive = TRUE, showWarnings = FALSE)
     unlink(list.files(dir, full.names = TRUE))
-    writeLines(conditionMessage(res), file.path(dir, "ERROR.txt"))
+    con <- file(file.path(dir, "ERROR.txt"), "wb"); writeLines(conditionMessage(res), con); close(con)
     cat(sprintf("  %-55s ERROR: %s\n", case, conditionMessage(res)))
   } else {
     write_result(case, res)
@@ -220,5 +243,96 @@ run_case("emissions_direct_1b_structure_ef_only", do.call(run_emissions_direct, 
   has_herd_structure = TRUE, emission_factors_only = TRUE,
   cohort_level_data = rd(ex_mod, "emissions_direct_input_chrt_structure_data.csv")
 ), feed_args, direct_common)))
+
+# run_emissions_direct() on inputs with CHK and non-demographic (FN / MN)
+# cohorts: the run_gleam examples rather than the direct-emissions examples,
+# which hold only the six demographic cohorts of the ruminants and pigs.
+run_case("emissions_direct_3a_no_structure_mixed", do.call(run_emissions_direct, list(
+  has_herd_structure = FALSE, run_demographic = TRUE, run_nondemographic = TRUE,
+  cohort_level_data = rd(ex_run, "master_chrt_lvl_no_structure_mixed_data.csv")[not_nondemo(herd_id)],
+  herd_level_data = rd(ex_run, "master_hrd_lvl_mixed_data.csv")[not_nondemo(herd_id)],
+  feed_rations = rd(ex_run, "feed_rations_share_chrt.csv")[not_nondemo(herd_id)],
+  feed_params = rd(ex_run, "feed_quality.csv"),
+  manure_management_system_fraction = rd(ex_run, "manure_management_system_fraction.csv")[not_nondemo(herd_id)],
+  manure_management_system_factors = rd(ex_run, "manure_management_system_factors.csv")[not_nondemo(herd_id)],
+  simulation_duration = 365, global_warming_potential_set = "AR6", show_indicator = q
+)))
+structure_direct_common <- function() list(
+  has_herd_structure = TRUE,
+  herd_level_data = rd(ex_run, "master_hrd_lvl_structure_data.csv"),
+  manure_management_system_fraction = rd(ex_run, "manure_management_system_fraction.csv"),
+  manure_management_system_factors = rd(ex_run, "manure_management_system_factors.csv"),
+  simulation_duration = 365, global_warming_potential_set = "AR6", show_indicator = q
+)
+run_case("emissions_direct_3b_structure_chk_nondemo", do.call(run_emissions_direct, c(list(
+  cohort_level_data = rd(ex_run, "master_chrt_lvl_structure_data.csv"),
+  feed_rations = rd(ex_run, "feed_rations_share_chrt.csv"),
+  feed_params = rd(ex_run, "feed_quality.csv")
+), structure_direct_common())))
+
+cat("Extra coverage cases (inputs built by tests/data/build_golden_inputs.py)\n")
+data_dir <- normalizePath(file.path(script_dir, "..", "..", "tests", "data"), mustWork = FALSE)
+rdd <- function(case, name) data.table::fread(file.path(data_dir, case, paste0(name, ".csv")))
+case_inputs <- function(case, rations = "feed_rations") list(
+  herd_level_data = rdd(case, "herd_level_data"),
+  feed_rations = rdd(case, rations),
+  feed_params = rd(ex_run, "feed_quality.csv"),
+  feed_emissions = rd(ex_run, "feed_emission_factors.csv"),
+  manure_management_system_fraction = rdd(case, "manure_management_system_fraction"),
+  manure_management_system_factors = rdd(case, "manure_management_system_factors")
+)
+
+# run_emissions_direct() with primary ration quality supplied per cohort and
+# non-demographic phase (no feed tables).
+run_case("emissions_direct_3b_structure_chk_nondemo_rq", do.call(run_emissions_direct, c(list(
+  cohort_level_data = rdd("direct_rq", "cohort_level_data")
+), structure_direct_common())))
+
+# BFL / SHP / GTS / CML / CTL with non-demographic FN and MN cohorts (SHP: FN
+# only, SHP MN is rejected by R, see run_gleam_shp_mn_rejected).
+run_case("run_gleam_ruminant_nondemo_no_structure", do.call(run_gleam, c(list(
+  has_herd_structure = FALSE, run_demographic = TRUE, run_nondemographic = TRUE,
+  cohort_level_data = rdd("ruminant_nondemo", "cohort_level_data"),
+  simulation_duration = 365, global_warming_potential_set = "AR6", show_indicator = q
+), case_inputs("ruminant_nondemo"))))
+run_case("run_gleam_ruminant_nondemo_structure", do.call(run_gleam, c(list(
+  has_herd_structure = TRUE, run_demographic = FALSE, run_nondemographic = FALSE,
+  cohort_level_data = rdd("ruminant_nondemo", "cohort_level_data_structure"),
+  simulation_duration = 365, global_warming_potential_set = "AR6", show_indicator = q
+), case_inputs("ruminant_nondemo"))))
+run_case("emissions_direct_3c_no_structure_ruminant_nondemo", do.call(run_emissions_direct, c(list(
+  has_herd_structure = FALSE, run_demographic = TRUE, run_nondemographic = TRUE,
+  cohort_level_data = rdd("ruminant_nondemo", "cohort_level_data"),
+  simulation_duration = 365, global_warming_potential_set = "AR6", show_indicator = q
+), case_inputs("ruminant_nondemo")[c(
+  "herd_level_data", "feed_rations", "feed_params",
+  "manure_management_system_fraction", "manure_management_system_factors"
+)])))
+# CHK whose adult females do not lay (is_egg_producing = FALSE on FA).
+run_case("run_gleam_chk_nonlaying_no_structure", do.call(run_gleam, c(list(
+  has_herd_structure = FALSE, run_demographic = TRUE, run_nondemographic = FALSE,
+  cohort_level_data = rdd("chk_nonlaying", "cohort_level_data"),
+  simulation_duration = 365, global_warming_potential_set = "AR6", show_indicator = q
+), case_inputs("chk_nonlaying", "feed_rations_share_chrt"))))
+run_case("run_gleam_chk_nonlaying_structure", do.call(run_gleam, c(list(
+  has_herd_structure = TRUE, run_demographic = FALSE, run_nondemographic = FALSE,
+  cohort_level_data = rdd("chk_nonlaying", "cohort_level_data_structure"),
+  simulation_duration = 365, global_warming_potential_set = "AR6", show_indicator = q
+), case_inputs("chk_nonlaying", "feed_rations_share_chrt"))))
+# Adult CHK females gaining weight, laying and not laying: the growth
+# coefficient of FA (0.0279, flag ignored in R) only shows when the daily
+# weight gain is not 0, which the pipelines never produce for adults.
+run_case("metabolic_energy_req_module_chk_fa_growth", list(result = run_metabolic_energy_req_module(
+  cohort_level_data = rdd("mer_chk_growth", "cohort_level_data"),
+  herd_level_data = rdd("mer_chk_growth", "herd_level_data"), show_indicator = q
+)))
+# Expected to fail (ERROR.txt): the maintenance validator requires
+# offtake_rate < 1 for SHP males, but the non-demographic herd module sets
+# offtake_rate = 1 on every MN row.
+run_case("run_gleam_shp_mn_rejected", do.call(run_gleam, c(list(
+  has_herd_structure = FALSE, run_demographic = TRUE, run_nondemographic = TRUE,
+  cohort_level_data = rdd("shp_mn_rejected", "cohort_level_data"),
+  simulation_duration = 365, global_warming_potential_set = "AR6", show_indicator = q
+), case_inputs("shp_mn_rejected"))))
 
 cat("Done.\n")

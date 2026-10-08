@@ -1,0 +1,11 @@
+herd_id	species_short	cohort_short	cohort_duration_days	offtake_rate	death_rate	high_activity_fraction	low_activity_fraction	nondemo_productive_phase_id	is_egg_producing
+3	SHP	FA	1110.0	0.0	0.065	0.226	0.133	NA	NA
+3	SHP	FJ	60.0	0.453	0.171	0.226	0.133	NA	NA
+3	SHP	FN	NA	NA	0.08	0.226	0.133	1	NA
+3	SHP	FN	NA	NA	0.05	0.226	0.133	2	NA
+3	SHP	FS	448.0	0.453	0.065	0.226	0.133	NA	NA
+3	SHP	MA	2090.0	0.0	0.065	0.226	0.133	NA	NA
+3	SHP	MJ	60.0	0.913	0.171	0.226	0.133	NA	NA
+3	SHP	MN	NA	NA	0.08	0.226	0.133	1	NA
+3	SHP	MN	NA	NA	0.05	0.226	0.133	2	NA
+3	SHP	MS	448.0	0.913	0.065	0.226	0.133	NA	NA
