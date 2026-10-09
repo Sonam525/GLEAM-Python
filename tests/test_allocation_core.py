@@ -21,6 +21,7 @@ from gleampy import (
     run_allocation_module,
 )
 from gleampy.io import load_example
+from float_compare import assert_same_float
 
 REL = 1.5e-8  # testthat tolerance
 
@@ -604,13 +605,13 @@ def _check_vectorised(fn, columns: dict, scalar_kwargs: dict | None = None):
     if isinstance(vec, dict):
         for key in vec:
             expected = np.array([r[key] for r in rows], dtype=float)
-            np.testing.assert_array_equal(vec[key], expected)
-            np.testing.assert_array_equal(ser[key], expected)
+            assert_same_float(vec[key], expected)
+            assert_same_float(ser[key], expected)
     else:
         expected = np.array(rows, dtype=float)
         assert isinstance(vec, np.ndarray) and vec.shape == (n,)
-        np.testing.assert_array_equal(vec, expected)
-        np.testing.assert_array_equal(ser, expected)
+        assert_same_float(vec, expected)
+        assert_same_float(ser, expected)
     return rows
 
 

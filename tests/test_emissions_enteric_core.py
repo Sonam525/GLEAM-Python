@@ -16,6 +16,7 @@ from gleampy import (
     run_emissions_enteric_module,
     validation_disabled,
 )
+from float_compare import assert_same_float
 
 COHORTS_SMALL = ["FJ", "FS", "FA", "MJ", "MS", "MA"]
 ALL_SPECIES = ["CTL", "BFL", "SHP", "GTS", "PGS", "CML", "CHK"]
@@ -144,9 +145,9 @@ def test_vectorised_ym_matches_elementwise_scalar_calls():
     vec = calc_conversion_factor_ym(sp, co, dig)
     scal = np.array([calc_conversion_factor_ym(s, c, d) for s, c, d in zip(sp, co, dig)])
     assert isinstance(vec, np.ndarray) and vec.shape == sp.shape
-    np.testing.assert_array_equal(vec, scal)
+    assert_same_float(vec, scal)
     # pandas Series input gives the same values
-    np.testing.assert_array_equal(calc_conversion_factor_ym(pd.Series(sp), pd.Series(co), pd.Series(dig)), scal)
+    assert_same_float(calc_conversion_factor_ym(pd.Series(sp), pd.Series(co), pd.Series(dig)), scal)
 
 
 def test_vectorised_ch4_enteric_matches_elementwise_scalar_calls():
@@ -154,9 +155,9 @@ def test_vectorised_ch4_enteric_matches_elementwise_scalar_calls():
     ym = calc_conversion_factor_ym(sp, co, dig)
     vec = calc_ch4_enteric(sp, ym, mit, ge, dmi)
     scal = np.array([calc_ch4_enteric(*args) for args in zip(sp, ym, mit, ge, dmi)])
-    np.testing.assert_array_equal(vec, scal)
+    assert_same_float(vec, scal)
     # scalars broadcast against vectors
-    np.testing.assert_array_equal(
+    assert_same_float(
         calc_ch4_enteric("CTL", ym, 1, 18.0, dmi),
         np.array([calc_ch4_enteric("CTL", y, 1, 18.0, d) for y, d in zip(ym, dmi)]),
     )

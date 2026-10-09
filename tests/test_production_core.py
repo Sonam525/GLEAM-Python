@@ -18,6 +18,7 @@ from gleampy import (
     load_example,
     run_production_module,
 )
+from float_compare import assert_same_float
 
 ALL_SPECIES = ["CTL", "BFL", "SHP", "GTS", "PGS", "CML", "CHK"]
 ALL_COHORTS = ["FJ", "FS", "FA", "MJ", "MS", "MA", "FN", "MN"]
@@ -353,10 +354,10 @@ def _check_vectorised(fn, df, args):
         assert list(vec) == list(rows[0])
         for k, v in vec.items():
             assert isinstance(v, np.ndarray) and v.shape == (len(df),)
-            np.testing.assert_array_equal(v, [r[k] for r in rows], err_msg=k)
+            assert_same_float(v, [r[k] for r in rows], err_msg=k)
     else:
         assert isinstance(vec, np.ndarray) and vec.shape == (len(df),)
-        np.testing.assert_array_equal(vec, rows)
+        assert_same_float(vec, rows)
 
 
 def test_vectorised_milk_matches_elementwise_scalar_calls():
@@ -378,7 +379,7 @@ def test_vectorised_meat_matches_elementwise_scalar_calls():
 def test_vectorised_scalar_simulation_duration_broadcasts():
     df = _mixed_inputs()
     vec = calc_fibre_production(df["species_short"], df["cohort_short"], df["fibre_yield_year"], 365, df["cohort_stock_size"])
-    np.testing.assert_array_equal(
+    assert_same_float(
         vec,
         [calc_fibre_production(s, c, f, 365, n)
          for s, c, f, n in zip(df["species_short"], df["cohort_short"], df["fibre_yield_year"], df["cohort_stock_size"])],

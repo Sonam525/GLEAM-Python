@@ -173,7 +173,13 @@ def test_steady_state_scalar_and_batch_kernels_are_identical():
     finally:
         dh.SCALAR_STEADY_STATE_MAX_HERDS = old
     for key, val in scalar.items():
-        np.testing.assert_array_equal(val, batch[key], err_msg=key)
+        # Same formulas on Python floats and on numpy arrays: equal up to
+        # last-bit rounding (CPU dependent), which the steady-state iteration
+        # can amplify. Iteration counts must match exactly.
+        if key == "days_to_steady_state":
+            np.testing.assert_array_equal(val, batch[key], err_msg=key)
+        else:
+            np.testing.assert_allclose(val, batch[key], rtol=1e-10, atol=1e-13, err_msg=key)
     assert list(scalar["days_to_steady_state"]) == [21889, 1419, 894]  # R iteration counts
 
 

@@ -956,7 +956,11 @@ def test_power_follows_r_pow_edge_cases():
     expected = np.array([_r_num(c[2]) for c in _R_POW_EDGES])
     got = _r_pow(x, y)
     np.testing.assert_array_equal(got, expected)
-    np.testing.assert_array_equal(np.signbit(got), np.signbit(expected))
+    # The sign of zeros and infinities is part of the result; the sign bit of a
+    # NaN is not (x86 C pow returns a negative NaN for (-2)^0.75, ARM a positive one).
+    nan = np.isnan(expected)
+    np.testing.assert_array_equal(np.isnan(got), nan)
+    np.testing.assert_array_equal(np.signbit(got[~nan]), np.signbit(expected[~nan]))
     # Finite inputs: exactly numpy's ** (C pow), so valid results are unchanged.
     rng = np.random.default_rng(0)
     base = rng.uniform(0, 800, 1000)

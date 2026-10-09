@@ -14,6 +14,7 @@ from gleampy import (
     calc_daily_weight_gain,
     validation_disabled,
 )
+from float_compare import assert_same_float
 
 REL = 1.5e-8  # testthat tolerance
 
@@ -354,7 +355,7 @@ def _assert_same(vec: dict, rows: list[dict]) -> None:
     for key, values in vec.items():
         assert isinstance(values, np.ndarray) and values.shape == (len(rows),)
         scal = np.array([r[key] for r in rows], dtype=float)
-        np.testing.assert_array_equal(values, scal, err_msg=key)
+        assert_same_float(values, scal, err_msg=key)
 
 
 def test_vectorised_matches_elementwise_calls():

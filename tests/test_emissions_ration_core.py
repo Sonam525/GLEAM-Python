@@ -29,6 +29,7 @@ from gleampy import (
     calc_n2o_ration_manure,
     validation_disabled,
 )
+from float_compare import assert_same_float
 
 REL = 1.5e-8  # testthat tolerance
 
@@ -259,4 +260,4 @@ def test_vectorised_matches_elementwise_calls():
         rows = [fn(float(f), float(v)) for f, v in zip(frac, values)]
         assert isinstance(vec, np.ndarray) and vec.shape == frac.shape
         assert all(isinstance(r, float) for r in rows)
-        np.testing.assert_array_equal(vec, rows, err_msg=fn.__name__)
+        assert_same_float(vec, rows, err_msg=fn.__name__)

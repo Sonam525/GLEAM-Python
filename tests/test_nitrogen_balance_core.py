@@ -16,6 +16,7 @@ from gleampy import (
     load_example,
     run_nitrogen_balance_module,
 )
+from float_compare import assert_same_float
 
 ALL_SPECIES = ["CTL", "BFL", "SHP", "GTS", "PGS", "CML", "CHK"]
 ALL_COHORTS = ["FJ", "FS", "FA", "MJ", "MS", "MA", "FN", "MN"]
@@ -281,10 +282,10 @@ def test_vectorised_retention_matches_elementwise_scalar_calls():
         for row in df.to_dict("records")
     ])
     assert isinstance(vec, np.ndarray) and vec.shape == (len(df),)
-    np.testing.assert_array_equal(vec, scal)
+    assert_same_float(vec, scal)
     # numpy array inputs give the same result as Series
     vec_np = calc_nitrogen_retention(**{a: df[a].to_numpy() for a in args})
-    np.testing.assert_array_equal(vec_np, scal)
+    assert_same_float(vec_np, scal)
 
 
 def test_vectorised_intake_and_excretion_match_elementwise_scalar_calls():
@@ -293,12 +294,12 @@ def test_vectorised_intake_and_excretion_match_elementwise_scalar_calls():
     dmi = rng.uniform(0.05, 20, len(df))
     n = rng.uniform(0.005, 0.05, len(df))
     intake = calc_nitrogen_intake(dmi, n)
-    np.testing.assert_array_equal(intake, [calc_nitrogen_intake(a, b) for a, b in zip(dmi, n)])
+    assert_same_float(intake, [calc_nitrogen_intake(a, b) for a, b in zip(dmi, n)])
 
     retention = calc_nitrogen_retention(**{a: df[a] for a in df.columns})
     intake_big = intake + retention  # guarantees intake >= retention
     excr = calc_nitrogen_excretion(df["species_short"], intake_big, retention)
-    np.testing.assert_array_equal(
+    assert_same_float(
         excr,
         [calc_nitrogen_excretion(s, i, r) for s, i, r in zip(df["species_short"], intake_big, retention)],
     )

@@ -15,6 +15,7 @@ from gleampy import (
 )
 from gleampy.constants import GLEAM_FEED_EMISSIONS_META
 from gleampy.io import load_example
+from float_compare import assert_same_float
 
 REL = 1.5e-8  # testthat tolerance
 
@@ -313,8 +314,8 @@ def test_vectorised_cohort_totals_matches_scalar_calls():
                              pd.Series(names), pd.Series(types))
     rows = np.array([calc_cohort_totals(value[i], stock[i], intake[i], feed, duration[i], names[i], types[i])
                      for i in range(len(value))])
-    np.testing.assert_array_equal(vec, rows)
-    np.testing.assert_array_equal(ser, rows)
+    assert_same_float(vec, rows)
+    assert_same_float(ser, rows)
     # Feed variable named like a feed emission is not scaled by ration_intake
     assert rows[5] == 7.0 * 4.0 * 365.0
     assert rows[2] == 33.4 * 12.5 * 100.0 * 365.0 / 1000
@@ -326,12 +327,12 @@ def test_vectorised_allocated_emissions_and_co2eq_match_scalar_calls():
     gas = ["CH4", "N2O", "CO2", "N2O", "CH4"]
     vec = calc_allocated_emissions(np.array(value), pd.Series(share))
     rows = np.array([calc_allocated_emissions(v, s) for v, s in zip(value, share)])
-    np.testing.assert_array_equal(vec, rows)
+    assert_same_float(vec, rows)
     for gwp in ("AR6", "AR5_excluding_carbon_feedback", "AR5_including_carbon_feedback", "AR4"):
         out = calc_co2eq(pd.Series(gas), vec, gwp)
         rows_co2 = [calc_co2eq(g, v, gwp) for g, v in zip(gas, rows)]
-        np.testing.assert_array_equal(out["value_co2eq"], [r["value_co2eq"] for r in rows_co2])
-        np.testing.assert_array_equal(out["gwp"], [r["gwp"] for r in rows_co2])
+        assert_same_float(out["value_co2eq"], [r["value_co2eq"] for r in rows_co2])
+        assert_same_float(out["gwp"], [r["gwp"] for r in rows_co2])
 
 
 # ---- validators look at distinct values only (R deduplicates / runs per value) --

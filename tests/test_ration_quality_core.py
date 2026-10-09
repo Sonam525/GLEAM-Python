@@ -17,6 +17,7 @@ from gleampy import (
     calc_ration_urinary_energy_fraction,
     validation_disabled,
 )
+from float_compare import assert_same_float
 
 REL = 1.5e-8  # testthat tolerance
 
@@ -315,11 +316,11 @@ def test_vectorised_matches_elementwise_calls():
         if isinstance(vec, dict):
             for k in vec:
                 assert all(isinstance(r[k], float) for r in rows)
-                np.testing.assert_array_equal(vec[k], [r[k] for r in rows], err_msg=k)
+                assert_same_float(vec[k], [r[k] for r in rows], err_msg=k)
         else:
             assert isinstance(vec, np.ndarray) and vec.shape == (n,)
             assert all(isinstance(r, float) for r in rows)
-            np.testing.assert_array_equal(vec, rows)
+            assert_same_float(vec, rows)
 
     check(calc_feed_digestibility_fraction, de_rum, de_pig, ge)
     check(calc_ration_digestibility, species, frac, rum, pig)
